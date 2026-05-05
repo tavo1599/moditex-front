@@ -5,12 +5,10 @@ const api = axios.create({
   baseURL: 'http://localhost:3000', // La ruta de tu backend
 });
 
-// EL INTERCEPTOR: Se ejecuta automáticamente antes de cada envío
+// 1. EL INTERCEPTOR DE PETICIÓN (Lo que ya tenías)
 api.interceptors.request.use((config) => {
-  // Buscamos el token donde lo guardaste al hacer Login (suele llamarse 'token' o 'jwt')
   const token = localStorage.getItem('token'); 
   
-  // Si hay token, se lo pegamos en la cabecera de seguridad
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -19,5 +17,22 @@ api.interceptors.request.use((config) => {
 }, (error) => {
   return Promise.reject(error);
 });
+
+// 2. EL INTERCEPTOR DE RESPUESTA (Lo que te faltaba)
+api.interceptors.response.use(
+  (response) => response, // Si todo sale bien, deja pasar la respuesta
+  (error) => {
+    // Si el backend responde con un 401 (Token vencido o inválido)
+    if (error.response && error.response.status === 401) {
+      
+      // Borramos el token inservible
+      localStorage.removeItem('token');
+      
+      // Lo mandamos de una patada al Login
+      window.location.replace('/login'); 
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default api;

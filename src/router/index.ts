@@ -69,6 +69,17 @@ const router = createRouter({
   name: 'config-colores',
   component: () => import('../views/ColoresView.vue')
 },
+{
+      path: '/liquidaciones',
+      name: 'Liquidaciones',
+      component: () => import('../views/LiquidacionesView.vue'), // Ajusta la ruta según tu carpeta
+      meta: { title: 'Liquidación de Costos' }
+    },
+    {
+  path: '/produccion/nueva-orden',
+  name: 'NuevaOrdenCorte',
+  component: () => import('../views/OrdenCorteView.vue')
+}
   ],
 
   

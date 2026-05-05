@@ -14,13 +14,17 @@ const productos = ref<Producto[]>([]);
 const cargando = ref(true);
 const mostrarModal = ref(false);
 
+// ESTADOS PARA EDICIÓN
+const modoEdicion = ref(false);
+const idEdicion = ref<number | null>(null);
+
 const formBase: Producto = { skuBase: '', nombre: '', categoria: 'Pantalones' };
 const formulario = ref<Producto>({ ...formBase });
 
 const cargarProductos = async () => {
   cargando.value = true;
   try {
-    const respuesta = await api.get('/productos'); // Requerirá su controlador en NestJS
+    const respuesta = await api.get('/productos'); 
     productos.value = respuesta.data;
   } catch (error) {
     console.error("Error al cargar productos:", error);
@@ -31,7 +35,13 @@ const cargarProductos = async () => {
 
 const guardarProducto = async () => {
   try {
-    await api.post('/productos', formulario.value);
+    if (modoEdicion.value && idEdicion.value) {
+      // MODO ACTUALIZAR
+      await api.put(`/productos/${idEdicion.value}`, formulario.value);
+    } else {
+      // MODO CREAR
+      await api.post('/productos', formulario.value);
+    }
     cerrarModal();
     cargarProductos();
   } catch (error) {
@@ -39,18 +49,29 @@ const guardarProducto = async () => {
   }
 };
 
+const abrirEditar = (item: Producto) => {
+  modoEdicion.value = true;
+  idEdicion.value = item.id || null;
+  formulario.value = { ...item }; // Copiamos los datos del producto al formulario
+  mostrarModal.value = true;
+};
+
 const eliminarProducto = async (id: number) => {
-  if (confirm("¿Eliminar este modelo de tu catálogo? (Se borrarán sus fichas técnicas)")) {
-    try {
-      await api.delete(`/productos/${id}`);
-      cargarProductos();
-    } catch (error) {
-      alert("Error al eliminar el modelo.");
-    }
+  const confirmacion = confirm("¿Estás seguro de eliminar este producto?");
+  if (!confirmacion) return;
+  
+  try {
+    await api.delete(`/productos/${id}`);
+    await cargarProductos(); // Vuelves a cargar la tabla
+    alert("Producto eliminado con éxito");
+  } catch (error: any) {
+    alert("❌ No se puede eliminar. Es probable que este producto ya tenga stock en el almacén o esté en una orden de producción.");
   }
 };
 
 const abrirModal = () => {
+  modoEdicion.value = false;
+  idEdicion.value = null;
   formulario.value = { ...formBase };
   mostrarModal.value = true;
 };
@@ -100,7 +121,10 @@ onMounted(() => {
               <span class="px-2 py-1 rounded bg-gray-100">{{ item.categoria }}</span>
             </td>
             <td class="p-4 text-center">
-              <button @click="item.id && eliminarProducto(item.id)" class="text-gray-400 hover:text-red-600 transition text-lg">🗑️</button>
+              <div class="flex justify-center gap-2">
+                <button @click="abrirEditar(item)" class="text-gray-400 hover:text-blue-600 transition text-lg" title="Editar">✏️</button>
+                <button @click="item.id && eliminarProducto(item.id)" class="text-gray-400 hover:text-red-600 transition text-lg" title="Eliminar">🗑️</button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -108,9 +132,9 @@ onMounted(() => {
     </div>
 
     <div v-if="mostrarModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
         <div class="bg-gray-900 p-4 flex justify-between items-center text-white">
-          <h3 class="font-bold text-lg">Crear Nuevo Modelo</h3>
+          <h3 class="font-bold text-lg">{{ modoEdicion ? 'Editar Modelo' : 'Crear Nuevo Modelo' }}</h3>
           <button @click="cerrarModal" class="text-gray-400 hover:text-white text-xl">&times;</button>
         </div>
         <form @submit.prevent="guardarProducto" class="p-6 space-y-4">
@@ -130,12 +154,17 @@ onMounted(() => {
               <option>Casacas</option>
               <option>Polos</option>
               <option>Vestidos</option>
+              <option>Poleras</option>
+              <option>Conjuntos</option>
+              <option>Camisas</option>
               <option>Accesorios</option>
             </select>
           </div>
           <div class="flex justify-end gap-3 pt-6 mt-2 border-t border-gray-100">
             <button type="button" @click="cerrarModal" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition font-medium">Cancelar</button>
-            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold shadow-md transition">💾 Guardar Modelo</button>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold shadow-md transition">
+              {{ modoEdicion ? '💾 Actualizar Modelo' : '💾 Guardar Modelo' }}
+            </button>
           </div>
         </form>
       </div>

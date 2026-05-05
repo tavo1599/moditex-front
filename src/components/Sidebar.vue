@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth' // Ajusta la ruta si tu store está en otra carpeta
 
-// Aquí están las 5 áreas maestras que definimos en nuestra arquitectura
+const router = useRouter()
+const authStore = useAuthStore()
+
+// Aquí están las áreas maestras que definimos en nuestra arquitectura
 const menuItems = [
   { name: 'Dashboard', path: '/', icon: '📊' },
   { name: 'Almacén', path: '/almacen', icon: '📦' },
@@ -11,20 +15,30 @@ const menuItems = [
   { name: 'Talleres', path: '/talleres', icon: '🧵' },
   { name: 'Productos', path: '/productos', icon: '👕' },
   { name: 'Control de Ordenes', path: '/control-ordenes', icon: '📋' },
+{ name: 'Liquidaciones', path: '/liquidaciones', icon: '💰' },
   { name: 'Almacen de terminados', path: '/almacen-terminados', icon: '🏬' },
   { name: 'Traslados', path: '/traslados', icon: '🔄' },
   { name: 'Punto de Venta', path: '/punto-venta', icon: '🛒' },
   { name: 'Config. Colores', path: '/config-colores', icon: '🎨' },
 ]
+
+// FUNCIÓN PARA CERRAR SESIÓN DE FORMA SEGURA
+const cerrarSesion = () => {
+  // 1. Ejecutamos la función del Store que limpia las variables y el localStorage de un solo golpe
+  authStore.logout();
+  
+  // 2. Redirigimos al login inmediatamente
+  router.push({ name: 'login' });
+};
 </script>
 
 <template>
-  <aside class="w-64 bg-gray-900 text-white flex flex-col shadow-2xl z-10">
-    <div class="h-20 flex items-center justify-center border-b border-gray-800">
+  <aside class="w-64 bg-gray-900 text-white flex flex-col shadow-2xl z-10 h-screen sticky top-0">
+    <div class="h-20 flex items-center justify-center border-b border-gray-800 shrink-0">
       <h1 class="text-2xl font-bold tracking-widest text-blue-400">MODITEX</h1>
     </div>
 
-    <nav class="flex-1 px-4 py-6 space-y-2">
+    <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
       <RouterLink
         v-for="item in menuItems"
         :key="item.name"
@@ -37,16 +51,23 @@ const menuItems = [
       </RouterLink>
     </nav>
 
-    <div class="p-4 border-t border-gray-800 hover:bg-gray-800 transition-colors cursor-pointer">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-full bg-blue-900 flex items-center justify-center font-bold border border-blue-500">
+    <div class="p-4 border-t border-gray-800 mt-auto shrink-0 bg-gray-900/50">
+      <div class="flex items-center gap-3 mb-4 px-2">
+        <div class="w-10 h-10 rounded-full bg-blue-900 flex items-center justify-center font-bold border border-blue-500 shadow-inner">
           G
         </div>
         <div>
-          <p class="text-sm font-medium">Gustavo</p>
-          <p class="text-xs text-gray-400">Admin. del Sistema</p>
+          <p class="text-sm font-bold text-gray-100">Gustavo</p>
+          <p class="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Admin. del Sistema</p>
         </div>
       </div>
+
+      <button 
+        @click="cerrarSesion" 
+        class="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-lg font-bold transition-all duration-200 border border-transparent hover:border-red-500/30"
+      >
+        <span class="text-lg">🚪</span> Cerrar Sesión
+      </button>
     </div>
   </aside>
 </template>
