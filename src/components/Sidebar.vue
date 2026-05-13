@@ -21,6 +21,7 @@ const menuItems = [
   { name: 'Traslados', path: '/traslados', icon: '🔄' },
   { name: 'Punto de Venta', path: '/punto-venta', icon: '🛒' },
   { name: 'Config. Colores', path: '/config-colores', icon: '🎨' },
+  { name: 'Reportes', path: '/reportes', icon: '📈' }
 ]
 
 // FUNCIÓN PARA CERRAR SESIÓN DE FORMA SEGURA

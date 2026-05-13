@@ -16,6 +16,11 @@ const router = createRouter({
       component: () => import('../views/AlmacenView.vue')
     },
     {
+      path: '/reportes',
+      name: 'reportes',
+      component: () => import('../views/ReportesView.vue')
+    },
+    {
       path: '/ingenieria',
       name: 'ingenieria',
       component: () => import('../views/IngenieriaView.vue')
@@ -84,7 +89,8 @@ const router = createRouter({
       path: '/produccion/nueva-orden',
       name: 'NuevaOrdenCorte',
       component: () => import('../views/OrdenCorteView.vue')
-    }
+    },
+    
   ],
 })
 

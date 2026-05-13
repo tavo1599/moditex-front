@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Creamos la instancia base
 const api = axios.create({
-  baseURL: 'http://192.168.100.252:3000', // La ruta de tu backend
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000', 
 });
 
 // 1. EL INTERCEPTOR DE PETICIÓN (Lo que ya tenías)

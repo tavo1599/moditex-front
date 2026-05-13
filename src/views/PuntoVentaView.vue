@@ -40,7 +40,7 @@ let socket: Socket;
 
 const urlVinculacion = computed(() => {
   // 🚨 ASEGÚRATE DE QUE ESTA SEA TU IP REAL 🚨
-  return `http://192.168.100.252:5173/escaner?pin=${pinConexion.value}`;
+  return `sistema-textil-backend.railway.internal/escaner?pin=${pinConexion.value}`;
 });
 
 // Cierra el acordeón del QR si el celular se conecta
@@ -265,7 +265,7 @@ onMounted(async () => {
   }
 
   // 🚨 RECUERDA PONER TU IP AQUÍ 🚨
-  socket = io('http://192.168.100.252:3000'); 
+  socket = io('sistema-textil-backend.railway.internal'); 
 
   socket.on('connect', () => {
     socket.emit('crear-sala', { pin: pinConexion.value });
