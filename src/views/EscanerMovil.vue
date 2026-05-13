@@ -171,11 +171,17 @@ let scannerProductos: Html5Qrcode | null = null;
 const modoEscaneoQR = ref(false);
 const carritoLaptop = ref<any[]>([]);
 
-// 🔥 NUEVAS VARIABLES PARA CÁMARAS
 const camarasDisponibles = ref<{id: string, label: string}[]>([]);
 const camaraSeleccionada = ref('');
 
-const IP_BACKEND = 'https://sistema-textil-backend-production.up.railway.app/'; 
+// ==========================================
+// 🚀 CORRECCIÓN CLAVE: URL DINÁMICA Y SEGURA
+// ==========================================
+// Usamos la variable de entorno de Vercel. Si tiene /api al final, se lo quitamos para los Sockets.
+// Si por alguna razón falla, usa el fallback de Railway.
+const urlBase = import.meta.env.VITE_API_URL 
+  ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') 
+  : 'https://sistema-textil-backend-production.up.railway.app';
 
 onMounted(() => {
   if (route.query.pin) {
@@ -191,27 +197,16 @@ onMounted(() => {
   }
 });
 
-// ==========================================
-// 🔥 LÓGICA DE DETECCIÓN Y CAMBIO DE CÁMARAS 
-// ==========================================
 const prepararCamara = async (tipo: 'login' | 'productos') => {
   if (tipo === 'login') modoEscaneoQR.value = true;
 
-  // Si aún no tenemos la lista de cámaras, las pedimos al sistema
   if (camarasDisponibles.value.length === 0) {
     try {
       const devices = await Html5Qrcode.getCameras();
-      
       if (devices && devices.length > 0) {
         camarasDisponibles.value = devices;
-        
-        // Extraemos la primera de forma segura sin usar [0]
         const [primeraCamara] = devices; 
-        
-        // Extraemos la última clonando el final del arreglo (evita errores de índice)
         const ultimaCamara = devices.slice(-1)[0]; 
-
-        // Usamos el encadenamiento opcional (?.) para que TS no llore si algo es undefined
         camaraSeleccionada.value = ultimaCamara?.id || primeraCamara?.id || '';
       }
     } catch (err) {
@@ -219,13 +214,11 @@ const prepararCamara = async (tipo: 'login' | 'productos') => {
     }
   }
 
-  // Lanzamos la cámara correspondiente
   if (tipo === 'login') abrirCamaraVinculacion();
   else iniciarCamaraProductos();
 };
 
 const reiniciarCamara = async (tipo: 'login' | 'productos') => {
-  // Apagamos la cámara actual y la volvemos a encender con el nuevo ID
   if (tipo === 'login' && scannerLogin) {
     await scannerLogin.stop();
     abrirCamaraVinculacion();
@@ -235,14 +228,9 @@ const reiniciarCamara = async (tipo: 'login' | 'productos') => {
   }
 };
 
-// ==========================================
-// INICIALIZACIÓN DE ESCÁNERES
-// ==========================================
 const abrirCamaraVinculacion = () => {
   setTimeout(() => {
     scannerLogin = new Html5Qrcode("lector-qr-login");
-    
-    // Si elegimos una cámara del select, usamos su ID. Si no, usamos la trasera por defecto.
     const config = camaraSeleccionada.value 
       ? { deviceId: { exact: camaraSeleccionada.value } } 
       : { facingMode: "environment" };
@@ -275,7 +263,6 @@ const iniciarCamaraProductos = () => {
 
   setTimeout(() => {
     scannerProductos = new Html5Qrcode("lector-qr");
-    
     const config = camaraSeleccionada.value 
       ? { deviceId: { exact: camaraSeleccionada.value } } 
       : { facingMode: "environment" };
@@ -309,11 +296,17 @@ const cerrarCamaraVinculacion = () => {
 };
 
 // ==========================================
-// WEBSOCKETS Y DESCONEXIÓN
+// 🚀 CORRECCIÓN CLAVE: CONEXIÓN SOCKET
 // ==========================================
 const conectar = () => {
   intentandoConexion.value = true;
-  socket = io(IP_BACKEND); 
+  
+  // Agregamos transports: ['websocket'] para evitar que Vercel bloquee la conexión
+  socket = io(urlBase, {
+    transports: ['websocket'],
+    reconnectionAttempts: 5,
+    timeout: 10000,
+  }); 
 
   socket.on('connect', () => {
     socket.emit('unirse-sala', { pin: String(pin.value) });
@@ -323,8 +316,13 @@ const conectar = () => {
     socketActivo.value = true;
     intentandoConexion.value = false;
     
-    // 🔥 Iniciamos la cámara pidiendo permisos de lentes primero
     prepararCamara('productos');
+  });
+
+  socket.on('connect_error', (err) => {
+    console.error("Error de conexión al socket:", err.message);
+    intentandoConexion.value = false;
+    // Opcional: Mostrar una alerta al usuario aquí si falla repetidamente
   });
 
   socket.on('disconnect', () => socketActivo.value = false);

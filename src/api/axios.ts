@@ -2,10 +2,11 @@ import axios from 'axios';
 
 // Creamos la instancia base
 const api = axios.create({
-  baseURL: 'https://sistema-textil-backend-production.up.railway.app' 
+  // 🚀 El estándar profesional: Lee Vercel primero, si no, usa el respaldo.
+  baseURL: import.meta.env.VITE_API_URL 
 });
 
-// 1. EL INTERCEPTOR DE PETICIÓN (Lo que ya tenías)
+// 1. EL INTERCEPTOR DE PETICIÓN
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token'); 
   
@@ -18,7 +19,7 @@ api.interceptors.request.use((config) => {
   return Promise.reject(error);
 });
 
-// 2. EL INTERCEPTOR DE RESPUESTA (Lo que te faltaba)
+// 2. EL INTERCEPTOR DE RESPUESTA
 api.interceptors.response.use(
   (response) => response, // Si todo sale bien, deja pasar la respuesta
   (error) => {
