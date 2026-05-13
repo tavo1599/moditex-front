@@ -175,7 +175,7 @@ const carritoLaptop = ref<any[]>([]);
 const camarasDisponibles = ref<{id: string, label: string}[]>([]);
 const camaraSeleccionada = ref('');
 
-const IP_BACKEND = 'sistema-textil-backend-production.up.railway.app'; 
+const IP_BACKEND = 'https://sistema-textil-backend-production.up.railway.app/'; 
 
 onMounted(() => {
   if (route.query.pin) {
