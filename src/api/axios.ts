@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Creamos la instancia base
 const api = axios.create({
-  baseURL: 'https://sistema-textil-backend-production.up.railway.app/api' 
+  baseURL: 'https://sistema-textil-backend-production.up.railway.app' 
 });
 
 // 1. EL INTERCEPTOR DE PETICIÓN (Lo que ya tenías)
