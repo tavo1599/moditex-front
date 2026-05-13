@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { RouterLink, useRouter } from 'vue-router'
-import { useAuthStore } from '../stores/auth' // Ajusta la ruta si tu store está en otra carpeta
+import { RouterLink, useRouter, useRoute } from 'vue-router' // 🔥 Agregamos useRoute
+import { useAuthStore } from '../stores/auth' 
 
 const router = useRouter()
+const route = useRoute() // 🔥 Instanciamos useRoute para leer la ruta actual
 const authStore = useAuthStore()
 
 // Aquí están las áreas maestras que definimos en nuestra arquitectura
@@ -15,7 +16,7 @@ const menuItems = [
   { name: 'Talleres', path: '/talleres', icon: '🧵' },
   { name: 'Productos', path: '/productos', icon: '👕' },
   { name: 'Control de Ordenes', path: '/control-ordenes', icon: '📋' },
-{ name: 'Liquidaciones', path: '/liquidaciones', icon: '💰' },
+  { name: 'Liquidaciones', path: '/liquidaciones', icon: '💰' },
   { name: 'Almacen de terminados', path: '/almacen-terminados', icon: '🏬' },
   { name: 'Traslados', path: '/traslados', icon: '🔄' },
   { name: 'Punto de Venta', path: '/punto-venta', icon: '🛒' },
@@ -24,16 +25,16 @@ const menuItems = [
 
 // FUNCIÓN PARA CERRAR SESIÓN DE FORMA SEGURA
 const cerrarSesion = () => {
-  // 1. Ejecutamos la función del Store que limpia las variables y el localStorage de un solo golpe
   authStore.logout();
-  
-  // 2. Redirigimos al login inmediatamente
   router.push({ name: 'login' });
 };
 </script>
 
 <template>
-  <aside class="w-64 bg-gray-900 text-white flex flex-col shadow-2xl z-10 h-screen sticky top-0">
+  <aside 
+    v-if="!route.meta.hideLayout" 
+    class="w-64 bg-gray-900 text-white flex flex-col shadow-2xl z-10 h-screen sticky top-0"
+  >
     <div class="h-20 flex items-center justify-center border-b border-gray-800 shrink-0">
       <h1 class="text-2xl font-bold tracking-widest text-blue-400">MODITEX</h1>
     </div>

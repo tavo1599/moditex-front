@@ -15,6 +15,10 @@ const cargando = ref(true);
 const filtroStock = ref('con_stock');
 const filasExpandidas = ref<Record<string, boolean>>({});
 
+// 🔥 NUEVO: Estados para Filtros Avanzados de Kardex (Talla y Color)
+const filtroKardexTalla = ref('');
+const filtroKardexColor = ref('');
+
 // Modales
 const modalBodega = ref(false);
 const modoEdicionBodega = ref(false);
@@ -119,11 +123,32 @@ const tallasAgrupadas = {
   'Especiales': ['Estándar / Única']
 };
 
+// 🔥 NUEVO: Computado para extraer las tallas únicas que realmente existen en tu inventario (Para el selector)
+const tallasDisponiblesKardex = computed(() => {
+  const tallas = new Set(inventario.value.map(item => item.talla).filter(Boolean));
+  return Array.from(tallas).sort();
+});
+
+// 🔥 MEJORADO: El filtro principal ahora incluye el cruce de Stock, Talla y Color
 const inventarioFiltrado = computed(() => {
-  if (filtroStock.value === 'con_stock') return inventario.value.filter(item => item.stock > 0);
-  if (filtroStock.value === 'critico') return inventario.value.filter(item => item.stock > 0 && item.stock <= 5);
-  if (filtroStock.value === 'agotados') return inventario.value.filter(item => item.stock === 0);
-  return inventario.value;
+  let resultado = inventario.value;
+
+  // 1. Filtro por Stock (El original)
+  if (filtroStock.value === 'con_stock') resultado = resultado.filter(item => item.stock > 0);
+  else if (filtroStock.value === 'critico') resultado = resultado.filter(item => item.stock > 0 && item.stock <= 5);
+  else if (filtroStock.value === 'agotados') resultado = resultado.filter(item => item.stock === 0);
+
+  // 2. Filtro Combinado: Talla
+  if (filtroKardexTalla.value) {
+    resultado = resultado.filter(item => item.talla === filtroKardexTalla.value);
+  }
+
+  // 3. Filtro Combinado: Color
+  if (filtroKardexColor.value) {
+    resultado = resultado.filter(item => item.color === filtroKardexColor.value);
+  }
+
+  return resultado;
 });
 
 const inventarioAgrupado = computed(() => {
@@ -198,7 +223,6 @@ const guardarIngreso = async () => {
   }
 
   try {
-    // 🔥 TU RUTA ORIGINAL PARA GUARDAR EL INGRESO 🔥
     await api.post('/almacen-terminados/inventario', formIngreso.value);
 
     historialSesion.value.unshift({
@@ -226,12 +250,10 @@ const guardarIngreso = async () => {
   }
 };
 
-// DESHACER INGRESO (REDUCIR)
 const deshacerIngresoInmediato = async (item: any, index: number) => {
   if (!confirm(`¿Deshacer el ingreso de ${item.cantidad} unidades de ${item.color} Talla ${item.talla}?`)) return;
 
   try {
-    // Llama a la nueva ruta en el backend
     await api.post('/almacen-terminados/revertir-ingreso', {
       bodegaId: item.bodegaId,
       productoId: item.productoId,
@@ -289,13 +311,12 @@ const guardarAjuste = async () => {
 };
 
 // ==========================================
-// 1. GENERACIÓN DEL CÓDIGO (Tu lógica original intacta)
+// 1. GENERACIÓN DEL CÓDIGO 
 // ==========================================
 const abrirEtiquetas = async (item: any) => {
   itemEtiqueta.value = item;
   cantidadEtiquetas.value = item.stock > 0 ? item.stock : 1; 
   
-  // Buscar el color de forma robusta por si la BD guarda el nombre o el código
   const colorEncontrado = colores.value.find(c => c.codigo === item.color || c.nombre === item.color);
   const codigoColor = colorEncontrado ? colorEncontrado.codigo : item.color.substring(0, 3).toUpperCase();
 
@@ -303,19 +324,20 @@ const abrirEtiquetas = async (item: any) => {
   modalEtiquetas.value = true;
 
   await nextTick();
-  JsBarcode("#barcode-svg", codigoGenerado.value, {
+  
+  // 🔥 AJUSTE: Altura segura (40) para no causar error de desborde
+JsBarcode("#barcode-svg", codigoGenerado.value, {
     format: "CODE128", 
     lineColor: "#000",
-    width: 2,
-    height: 60,
-    displayValue: true,
-    fontSize: 14,
-    margin: 0
+    width: 2,         // 🔥 Aumentamos a 2. Esto hace las barras el doble de gruesas y visibles de lejos.
+    height: 55,       // 🔥 Más alto para que el celular lo "atrape" más fácil al pasar por encima.
+    displayValue: false, 
+    margin: 2         // 🔥 Bajamos el margen. Solo 2 es suficiente para la "zona de silencio", no necesitamos 10.
   });
 };
 
 // ==========================================
-// 2. IMPRESIÓN FÍSICA (Diseño de 3 columnas verticales)
+// 2. IMPRESIÓN FÍSICA (Diseño Premium 2 columnas - Corregido)
 // ==========================================
 const imprimirEtiquetas = () => {
   const svgContenedor = document.getElementById('contenedor-barcode')?.innerHTML || '';
@@ -323,106 +345,149 @@ const imprimirEtiquetas = () => {
   const nombreColor = getNombreColor(itemEtiqueta.value.color); 
   const ventana = window.open('', 'PRINT', 'height=600,width=800');
   
+  const frasesChillAmigos = [
+    "Tienes mucho flow... súbele el nivel.",
+    "Estás re-chill... pero con esto estás top.",
+    "Buena vibra, ¿no? ¡Dale un toque!",
+    "Eres tú... pero versión premium.",
+    "¡Dale caña! Con esto no hay quien te pare.",
+    "Todo bien... pero esto lo hace increíble.",
+    "Sube la apuesta... dale ese toque extra.",
+    "¡Chingón! Tu look ahora es otro nivel."
+  ];
+
+  const fraseAleatoria = frasesChillAmigos[Math.floor(Math.random() * frasesChillAmigos.length)];
+  const urlConejo = window.location.origin + '/conejo-chill.png';
+  const iconoAlgodon = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px; margin-top: -1px;"><path d="M12 2a3 3 0 0 0-3 3c0 .5.1.9.3 1.3A4.5 4.5 0 0 0 5 10.5c0 1.2.5 2.3 1.3 3A4 4 0 0 0 8 20.5a4 4 0 0 0 4-1.5 4 4 0 0 0 4 1.5 4 4 0 0 0 1.7-7 4.5 4.5 0 0 0-4.3-4.2A3 3 0 0 0 12 2z"/><path d="M12 22v-3"/></svg>`;
+
   ventana!.document.write(`
-    <html><head><title>Impresión de Etiquetas</title>
+    <html><head><title>Etiquetas Moditex</title>
     <style>
-      @page {
-        size: 100mm 40mm; 
-        margin: 0;
-      }
-      body {
-        margin: 0;
-        padding: 0;
-        width: 100mm;
-        height: 40mm;
-        font-family: Arial, sans-serif;
+      @page { size: 101.6mm 38.1mm; margin: 0 !important; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; width: 101.6mm; background: white; font-family: Arial, sans-serif; }
+      
+      .fila { 
+        display: flex; flex-direction: row; 
+        width: 101.6mm; height: 37mm; 
+        justify-content: space-between; align-items: center; 
+        overflow: hidden; 
+        page-break-inside: avoid;
+        page-break-after: always;
       }
       
-      .fila {
-        display: flex;
-        flex-direction: row; 
-        width: 100mm;
-        height: 40mm;
-        page-break-after: always; 
-        justify-content: space-between;
-        align-items: center;
-        box-sizing: border-box;
+      .etiqueta { 
+        width: 50.8mm; height: 37mm; 
+        display: flex; flex-direction: column; align-items: center; justify-content: center; 
+        overflow: hidden; 
       }
       
-      .etiqueta {
-        width: 33.3%; 
-        height: 38mm; 
-        display: flex;
-        flex-direction: column; 
-        align-items: center;
-        justify-content: center;
-        text-align: center;
+      .etiqueta:nth-child(odd) { padding-right: 2mm; } 
+      .etiqueta:nth-child(even) { padding-left: 2mm; } 
+
+      .header-marca { display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; letter-spacing: 1px; width: 100%; border-bottom: 1px solid #000; padding-bottom: 1px; margin-bottom: 2px;}
+      .titulo { font-size: 8px; font-weight: bold; text-transform: uppercase; line-height: 1.1; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;}
+      .svg-container { width: 100%; display: flex; justify-content: center; margin: 1px 0; }
+      .svg-container svg { max-width: 46mm; height: auto; } 
+      .sku-lectura { font-family: monospace; font-size: 8px; font-weight: bold; margin-bottom: 2px; }
+      .atributos-caja { display: flex; justify-content: space-around; width: 95%; border: 1px solid #000; border-radius: 2px; padding: 1px; font-size: 8px; font-weight: bold; }
+
+      .etiqueta-chill {
+        position: relative; 
+        width: 100%;
+        height: 100%;
         overflow: hidden;
-        padding: 0 1mm; 
-        box-sizing: border-box;
       }
 
-      .titulo {
-        font-size: 11px; 
-        font-weight: 900;
-        margin-bottom: 2px;
-        text-transform: uppercase;
-        line-height: 1;
-        width: 100%;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+      /* 🔥 CONEJO AJUSTADO (Movido a la derecha) */
+      .conejo-chill-image {
+        position: absolute;
+        bottom: 0;      
+        left: 1.5mm;    /* Antes estaba en -1mm, ahora le dimos espacio para que no se corte */
+        height: 100%;   
+        width: 43mm;    /* Ajustamos el ancho para compensar el movimiento */
+        object-fit: contain; 
+        object-position: bottom left; 
+        z-index: 1;
       }
-      
-      .svg-container {
-        width: 100%;
-        display: flex;
-        justify-content: center;
-      }
-      
-      /* El max-width asegura que tu código original encaje perfecto en la etiqueta sin cortarse */
-      .svg-container svg {
-        max-width: 100%; 
-        height: auto; 
-      }
-      
-      .detalle {
-        font-size: 10px; 
-        margin-top: 2px;
+
+      /* 🔥 GLOBO AJUSTADO (Movido a la izquierda, más centrado) */
+      .frase-globo {
+        position: absolute;
+        top: 4.5mm;      
+        right: 6mm;     /* Antes era 1.5mm. Al subir este número, se empuja hacia la izquierda */
+        background: #fff;
         color: #000;
+        border: 1px solid #000; 
+        border-radius: 6px;
+        padding: 3px 4px;
+        font-size: 7px; 
         font-weight: bold;
+        line-height: 1.1;
+        width: 16mm; 
+        text-align: center;
+        z-index: 2; 
+      }
+
+      /* El piquito del globo flotante (Alineado con el nuevo centro) */
+      .frase-globo::after {
+        content: '';
+        position: absolute;
+        bottom: -3px;
+        left: 2px; /* Movimos el piquito más al borde para que apunte bien a la cabeza */
+        border-width: 3px 3px 0 0;
+        border-style: solid;
+        border-color: #000 transparent transparent transparent;
+      }
+      
+      .frase-globo::before {
+        content: '';
+        position: absolute;
+        bottom: -1.5px;
+        left: 3px;
+        border-width: 2px 2px 0 0;
+        border-style: solid;
+        border-color: #fff transparent transparent transparent;
+        z-index: 1;
       }
     </style></head><body>
   `);
 
-  for (let i = 0; i < cantidadEtiquetas.value; i += 3) {
+  for (let i = 0; i < cantidadEtiquetas.value; i += 2) {
     ventana!.document.write('<div class="fila">');
-
-    for (let j = 0; j < 3; j++) {
+    for (let j = 0; j < 2; j++) {
       if (i + j < cantidadEtiquetas.value) {
         ventana!.document.write(`
           <div class="etiqueta">
-            <div class="titulo">${nombrePrenda.substring(0, 15)}</div>
+            <div class="header-marca">${iconoAlgodon} MODITEX</div>
+            <div class="titulo">${nombrePrenda}</div>
             <div class="svg-container">${svgContenedor}</div>
-            <div class="detalle">T: ${itemEtiqueta.value.talla} | C: ${nombreColor.substring(0,8)}</div>
+            <div class="sku-lectura">${codigoGenerado.value}</div>
+            <div class="atributos-caja">
+              <span>TALLA: ${itemEtiqueta.value.talla}</span>
+              <span>|</span>
+              <span>COLOR: ${nombreColor.toUpperCase()}</span>
+            </div>
           </div>
         `);
       } else {
-        ventana!.document.write('<div class="etiqueta"></div>');
+        ventana!.document.write(`
+          <div class="etiqueta">
+            <div class="etiqueta-chill">
+              <img src="${urlConejo}" class="conejo-chill-image">
+              <div class="frase-globo">${fraseAleatoria}</div>
+            </div>
+          </div>
+        `);
       }
     }
-
     ventana!.document.write('</div>');
   }
 
   ventana!.document.write('</body></html>');
   ventana!.document.close();
   ventana!.focus();
-
-  setTimeout(() => {
-    ventana!.print();
-    ventana!.close();
-  }, 800);
+  setTimeout(() => { ventana!.print(); ventana!.close(); }, 800);
 };
 
 onMounted(cargarDatos);
@@ -456,11 +521,46 @@ onMounted(cargarDatos);
 
     <template v-if="!cargando && vistaActiva === 'kardex'">
       <div class="space-y-4 animate-in fade-in duration-300">
-        <div class="flex gap-2 bg-white p-2 rounded-xl shadow-sm border border-gray-100 w-fit">
-          <button @click="filtroStock = 'con_stock'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition" :class="filtroStock === 'con_stock' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-50'">🟢 Disponibles</button>
-          <button @click="filtroStock = 'critico'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition" :class="filtroStock === 'critico' ? 'bg-red-100 text-red-700' : 'text-gray-500 hover:bg-gray-50'">🔴 Crítico 🚨</button>
-          <button @click="filtroStock = 'agotados'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition" :class="filtroStock === 'agotados' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-50'">⚫ Agotados</button>
+        
+        <!-- 🔥 ZONA DE FILTROS MEJORADA (Stock + Talla + Color) 🔥 -->
+        <div class="flex flex-wrap items-center gap-4 bg-white p-3 rounded-xl shadow-sm border border-gray-100">
+          
+          <!-- Filtro de Stock (Original) -->
+          <div class="flex gap-2 bg-gray-50 p-1 rounded-lg border border-gray-200">
+            <button @click="filtroStock = 'con_stock'" class="px-3 py-1.5 rounded-md font-bold text-[10px] uppercase tracking-widest transition" :class="filtroStock === 'con_stock' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:bg-gray-100'">🟢 Disponibles</button>
+            <button @click="filtroStock = 'critico'" class="px-3 py-1.5 rounded-md font-bold text-[10px] uppercase tracking-widest transition" :class="filtroStock === 'critico' ? 'bg-red-100 text-red-700 shadow-sm' : 'text-gray-500 hover:bg-gray-100'">🔴 Crítico 🚨</button>
+            <button @click="filtroStock = 'agotados'" class="px-3 py-1.5 rounded-md font-bold text-[10px] uppercase tracking-widest transition" :class="filtroStock === 'agotados' ? 'bg-gray-800 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'">⚫ Agotados</button>
+          </div>
+
+          <div class="h-8 w-px bg-gray-200 hidden md:block"></div> <!-- Separador visual -->
+
+          <!-- Nuevos Filtros Combinados -->
+          <div class="flex flex-wrap gap-3 items-end">
+            <div class="flex flex-col">
+              <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Filtro Talla</label>
+              <select v-model="filtroKardexTalla" class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 min-w-[100px]">
+                <option value="">Todas</option>
+                <option v-for="talla in tallasDisponiblesKardex" :key="talla" :value="talla">{{ talla }}</option>
+              </select>
+            </div>
+
+            <div class="flex flex-col">
+              <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Filtro Color</label>
+              <select v-model="filtroKardexColor" class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 min-w-[140px]">
+                <option value="">Todos</option>
+                <option v-for="color in colores" :key="color.codigo" :value="color.codigo">
+                  {{ color.nombre }}
+                </option>
+              </select>
+            </div>
+
+            <button v-if="filtroKardexTalla || filtroKardexColor" @click="filtroKardexTalla = ''; filtroKardexColor = ''" class="mb-1.5 ml-2 text-xs font-bold text-red-500 hover:text-red-700 hover:underline transition-colors flex items-center gap-1">
+              <span>✕</span> Limpiar
+            </button>
+          </div>
+
         </div>
+        <!-- 🔥 FIN ZONA DE FILTROS 🔥 -->
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table class="w-full text-left text-sm">
@@ -482,10 +582,15 @@ onMounted(cargarDatos);
                 <tr v-if="filasExpandidas[String(nombre)]" v-for="item in grupo.variantes" :key="item.id" class="bg-gray-50/30 hover:bg-white transition-colors">
                   <td class="p-3"></td> <td class="p-3 text-xs font-bold text-gray-500 pl-8">↳ Variante</td>
                   <td class="p-3"><span class="font-bold text-gray-700">{{ item.bodega.nombre }}</span></td>
+                  
+                  <!-- 🔥 FIX DE COLOR HEX: Ahora busca el color real dinámicamente 🔥 -->
                   <td class="p-3 text-gray-700 font-bold flex items-center gap-2">
-                    <span class="w-3 h-3 rounded-full border border-gray-300 shadow-sm inline-block" :style="{ backgroundColor: item.colorHex || '#ccc' }"></span>
+                    <span class="w-3 h-3 rounded-full border border-gray-300 shadow-sm inline-block" 
+                          :style="{ backgroundColor: colores.find(c => c.codigo === item.color || c.nombre === item.color)?.hex || colores.find(c => c.codigo === item.color || c.nombre === item.color)?.codigoHex || '#e5e7eb' }">
+                    </span>
                     {{ getNombreColor(item.color) }} <span class="text-[10px] text-gray-400 bg-gray-200 px-1.5 rounded font-mono">{{ item.color }}</span>
                   </td>
+                  
                   <td class="p-3 text-center font-black text-gray-900">{{ item.talla }}</td>
                   <td class="p-3 text-right font-black text-base" :class="item.stock === 0 ? 'text-gray-300' : 'text-green-600'">{{ item.stock }} und</td>
                   <td class="p-3 flex justify-center gap-2">
@@ -494,6 +599,13 @@ onMounted(cargarDatos);
                   </td>
                 </tr>
               </template>
+              
+              <!-- Mensaje si los filtros no encuentran nada -->
+              <tr v-if="Object.keys(inventarioAgrupado).length === 0">
+                <td colspan="7" class="p-8 text-center text-gray-400 font-bold">
+                  No se encontraron productos con la combinación de filtros seleccionada.
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>

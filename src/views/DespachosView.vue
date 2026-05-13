@@ -6,6 +6,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import JsBarcode from 'jsbarcode';
 
+// 🔥 1. INTERFAZ MEJORADA: Ahora incluye los detalles de la venta
 interface Despacho {
   id: number;
   codigoGuia: string; 
@@ -14,6 +15,14 @@ interface Despacho {
   prendas: number;
   estado: string;
   fecha: string;
+  venta?: {
+    detalles: {
+      nombre: string;
+      color: string;
+      talla: string;
+      cantidad: number;
+    }[]
+  };
 }
 
 const cargando = ref(true);
@@ -25,7 +34,7 @@ const cargarDespachos = async () => {
   try {
     cargando.value = true;
     errorConexion.value = false;
-    const response = await api.get('/despachos/pendientes'); 
+    const response = await api.get('/ventas/despachos-pendientes'); // 🚨 Ajusté la ruta a la que creamos en Ventas
     despachos.value = response.data;
   } catch (error) {
     console.error('Error al conectar:', error);
@@ -39,13 +48,10 @@ const cargarDespachos = async () => {
 // FUNCIÓN PARA ACTUALIZAR ESTADO
 const cambiarEstado = async (despacho: Despacho, nuevoEstado: string) => {
   try {
-    // Llamamos al backend para actualizar
+    // Si tu backend tiene esta ruta en despachos, déjala así. Si no, tendrás que crear un PATCH en el controller.
     await api.patch(`/despachos/${despacho.id}/estado`, { estado: nuevoEstado });
     
-    // Mostramos un mensajito de éxito
     alert(`El despacho ha sido marcado como: ${nuevoEstado} ✅`);
-    
-    // Recargamos la lista para que desaparezca o se actualice visualmente
     cargarDespachos();
   } catch (error) {
     console.error("Error al actualizar estado:", error);
@@ -53,11 +59,13 @@ const cambiarEstado = async (despacho: Despacho, nuevoEstado: string) => {
   }
 };
 
+// 🔥 2. GENERADOR DE PDF DINÁMICO MEJORADO
 const generarGuia = async (despacho: Despacho) => {
   try {
     const doc = new jsPDF();
     const qrDataUrl = await QRCode.toDataURL(despacho.codigoGuia || `GR-REF-${despacho.id}`);
 
+    // Diseño de Cabecera
     doc.setFillColor(31, 41, 55); 
     doc.rect(0, 0, 210, 40, 'F');
     
@@ -65,10 +73,11 @@ const generarGuia = async (despacho: Despacho) => {
     doc.setFontSize(22);
     doc.text("GUÍA DE REMISIÓN", 15, 25);
     
+    // 🔥 Corrección de Branding
     doc.setFontSize(10);
-    doc.text("PITUCORP TECHNOLOGIES S.A.C.", 140, 20); 
-    doc.text("RUC: 20600000000", 140, 25);
-    doc.text("Lima, Perú", 140, 30);
+    doc.text("MODITEX S.A.C.", 140, 20); 
+    doc.text("RUC: 20000000000", 140, 25); // Pon tu RUC real
+    doc.text("Juliaca, Puno - Perú", 140, 30);
 
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(12);
@@ -87,19 +96,34 @@ const generarGuia = async (despacho: Despacho) => {
     doc.setFontSize(8);
     doc.text("Escanear para entrega", 153, 94);
 
+    // 🔥 CREACIÓN DE TABLA DINÁMICA DE PRENDAS
+    let tableBody = [];
+    if (despacho.venta && despacho.venta.detalles && despacho.venta.detalles.length > 0) {
+      tableBody = despacho.venta.detalles.map(item => [
+        `${item.nombre} (Color: ${item.color} | Talla: ${item.talla})`,
+        `${item.cantidad} und`,
+        despacho.estado
+      ]);
+    } else {
+      // Fallback por si hay un despacho antiguo sin detalles
+      tableBody = [
+        ['Mercadería Textil (Lote Consolidado)', `${despacho.prendas} und`, despacho.estado]
+      ];
+    }
+
     autoTable(doc, {
       startY: 110,
-      head: [['Descripción', 'Cantidad', 'Estado']],
-      body: [
-        ['Mercadería Textil (Lote Consolidado)', `${despacho.prendas} und`, despacho.estado]
-      ],
+      head: [['Descripción del Artículo', 'Cantidad', 'Estado']],
+      body: tableBody,
       theme: 'striped',
       headStyles: { fillColor: [31, 41, 55] }
     });
 
+    // Pie de página
+    const finalY = (doc as any).lastAutoTable.finalY + 30; // Posicionamos firmas según el tamaño de la tabla
     doc.setFontSize(9);
-    doc.text("Firma de Despachador: ______________________", 15, 240);
-    doc.text("Firma de Cliente (Recepción): ______________________", 105, 240);
+    doc.text("Firma de Despachador: ______________________", 15, finalY);
+    doc.text("Firma de Cliente (Recepción): ______________________", 105, finalY);
     
     doc.save(`Guia_Remision_${despacho.codigoGuia || despacho.id}.pdf`);
   } catch (error) {
@@ -126,7 +150,6 @@ const imprimirSKUs = async (despacho: Despacho) => {
   
   setTimeout(() => {
     window.print();
-    // Limpiamos la variable para ocultar la etiqueta al volver
     setTimeout(() => {
       despachoAImprimir.value = null; 
     }, 500);
@@ -141,16 +164,12 @@ onMounted(() => {
 <template>
   <div>
     
-    <!-- ======================================================== -->
-    <!-- ZONA 1: SISTEMA NORMAL (Se oculta al imprimir con print:hidden) -->
-    <!-- ======================================================== -->
-    <div class="space-y-8 animate-fade-in relative print:hidden">
+    <div class="space-y-8 animate-fade-in relative print:hidden p-4 md:p-8 max-w-[1600px] mx-auto min-h-screen bg-gray-50/50">
       
-      <!-- HEADER -->
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <div>
           <h2 class="text-3xl font-extrabold text-gray-900 tracking-tight">Despachos y Logística 🚚</h2>
-          <p class="text-gray-500 mt-2 font-medium">Gestión de Guías de Remisión, códigos QR y etiquetado SKU.</p>
+          <p class="text-gray-500 mt-2 font-medium">Gestión de Guías de Remisión, Listas de Empaque y Despacho.</p>
         </div>
         <button @click="cargarDespachos" class="mt-4 md:mt-0 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold transition-colors flex items-center gap-2">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -158,7 +177,6 @@ onMounted(() => {
         </button>
       </div>
 
-      <!-- ESTADO 1: CARGANDO -->
       <div v-if="cargando" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div v-for="i in 2" :key="i" class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm animate-pulse">
           <div class="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
@@ -168,22 +186,19 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- ESTADO 2: ERROR -->
-      <div v-else-if="errorConexion" class="bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
+      <div v-else-if="errorConexion" class="bg-red-50 border border-red-200 rounded-2xl p-8 text-center shadow-sm">
         <div class="text-red-500 mb-3 text-4xl">⚠️</div>
         <h3 class="text-lg font-bold text-red-800">Error de Conexión</h3>
         <p class="text-red-600 mt-1">No se pudo conectar con el backend.</p>
       </div>
 
-      <!-- ESTADO 3: VACÍO -->
-      <div v-else-if="despachos.length === 0" class="bg-gray-50 border border-gray-200 rounded-2xl p-12 text-center flex flex-col items-center">
-        <span class="text-5xl mb-4">📦</span>
+      <div v-else-if="despachos.length === 0" class="bg-white border border-gray-200 rounded-2xl p-12 text-center flex flex-col items-center shadow-sm">
+        <span class="text-5xl mb-4 opacity-50">📦</span>
         <h3 class="text-xl font-bold text-gray-700">No hay despachos pendientes</h3>
-        <p class="text-gray-500 mt-2 max-w-md">Tu bandeja está limpia.</p>
+        <p class="text-gray-500 mt-2 max-w-md">El almacén está al día con las entregas.</p>
       </div>
 
-      <!-- ESTADO 4: DATOS REALES -->
-      <div v-else class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         <div 
           v-for="envio in despachos" 
           :key="envio.id" 
@@ -191,62 +206,71 @@ onMounted(() => {
         >
           <div class="flex justify-between items-start mb-4">
             <div>
-              <span class="text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider bg-yellow-100 text-yellow-800">
+              <span class="text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-wider"
+                    :class="envio.estado === 'Listo para Empaque' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' : 'bg-blue-100 text-blue-800 border border-blue-200'">
                 {{ envio.estado }}
               </span>
-              <h3 class="text-xl font-bold text-gray-900 mt-4">{{ envio.cliente }}</h3>
-              <p class="text-gray-500 text-sm mt-1 flex items-center gap-1">📍 {{ envio.destino }}</p>
+              <h3 class="text-xl font-black text-gray-900 mt-4 leading-tight">{{ envio.cliente }}</h3>
+              <p class="text-gray-500 text-sm mt-2 flex items-start gap-1 font-medium"><span>📍</span> {{ envio.destino }}</p>
             </div>
-            <div class="text-right bg-gray-50 p-2 rounded-lg border border-gray-100">
-              <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Guía Ref.</p>
-              <p class="font-mono font-bold text-gray-800">{{ envio.codigoGuia || envio.id }}</p>
+            <div class="text-right bg-gray-50 p-2.5 rounded-xl border border-gray-100 shadow-inner">
+              <p class="text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Guía Ref.</p>
+              <p class="font-mono font-bold text-gray-800 text-sm">{{ envio.codigoGuia || envio.id }}</p>
             </div>
           </div>
 
-          <div class="bg-gray-50 rounded-xl p-4 my-4 flex justify-between items-center border border-gray-100">
+          <div class="bg-gray-50 rounded-xl p-4 mt-2 mb-3 flex justify-between items-center border border-gray-100">
             <div>
-              <p class="text-xs text-gray-500 font-medium">Volumen Total</p>
-              <p class="text-lg font-black text-indigo-600">{{ envio.prendas }} <span class="text-sm font-medium text-gray-500">prendas</span></p>
+              <p class="text-[10px] text-gray-400 font-black uppercase tracking-widest">Volumen Total</p>
+              <p class="text-2xl font-black text-indigo-600 leading-none mt-1">{{ envio.prendas }} <span class="text-xs font-bold text-gray-400">UND</span></p>
             </div>
             <div class="text-right">
-              <p class="text-xs text-gray-500 font-medium">Fecha</p>
-              <p class="text-sm font-bold text-gray-800">{{ new Date(envio.fecha).toLocaleDateString() }}</p>
+              <p class="text-[10px] text-gray-400 font-black uppercase tracking-widest">Generado</p>
+              <p class="text-sm font-bold text-gray-700 mt-1">{{ new Date(envio.fecha).toLocaleDateString() }}</p>
             </div>
           </div>
 
-         <div class="flex flex-wrap gap-3 mt-auto pt-4 border-t border-gray-100">
-            <!-- Botones de Impresión (Siempre visibles) -->
-            <button @click="generarGuia(envio)" class="flex-1 bg-gray-900 hover:bg-black text-white py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm">
-              📄 Guía y QR
+          <div v-if="envio.venta?.detalles && envio.venta.detalles.length > 0" class="bg-indigo-50/50 rounded-xl p-4 my-2 text-sm max-h-40 overflow-y-auto border border-indigo-100 shadow-inner">
+            <p class="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-3 flex items-center gap-1"><span>📋</span> Artículos a Empacar</p>
+            <div class="space-y-2">
+              <div v-for="(item, index) in envio.venta.detalles" :key="index" class="flex justify-between items-center bg-white p-2 rounded-lg border border-indigo-50 shadow-sm">
+                <div class="flex-1 min-w-0 pr-2">
+                  <p class="font-bold text-gray-800 text-xs truncate">{{ item.nombre }}</p>
+                  <p class="text-[9px] font-bold text-gray-500 mt-0.5 uppercase tracking-wider">C: {{ item.color }} | T: {{ item.talla }}</p>
+                </div>
+                <div class="bg-indigo-100 px-2 py-1 rounded text-indigo-700 font-black text-sm">
+                  x{{ item.cantidad }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-3 mt-auto pt-4 border-t border-gray-100">
+            <button @click="generarGuia(envio)" class="flex-1 bg-gray-900 hover:bg-black text-white py-3 rounded-xl text-xs font-bold transition-all shadow-sm flex justify-center items-center gap-1.5">
+              <span>📄</span> Imprimir Guía
             </button>
-            <button @click="imprimirSKUs(envio)" class="flex-1 bg-white border-2 border-indigo-100 text-indigo-700 hover:bg-indigo-50 hover:border-indigo-200 py-2.5 rounded-xl text-sm font-semibold transition-all">
-              🏷️ Etiqueta
+            <button @click="imprimirSKUs(envio)" class="flex-1 bg-white border-2 border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 py-3 rounded-xl text-xs font-bold transition-all flex justify-center items-center gap-1.5">
+              <span>🏷️</span> Imprimir Etiqueta
             </button>
             
-            <!-- FLUJO 1: De "Listo para Empaque" a "En Tránsito" -->
             <button 
               v-if="envio.estado === 'Listo para Empaque'"
               @click="cambiarEstado(envio, 'En Tránsito')" 
-              class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-bold transition-all shadow-md mt-2 flex justify-center items-center gap-2">
-              🚛 Confirmar Salida (Despachar)
+              class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl text-sm font-black transition-all shadow-md mt-2 flex justify-center items-center gap-2 active:scale-[0.98]">
+              🚛 CONFIRMAR DESPACHO
             </button>
 
-            <!-- FLUJO 2: De "En Tránsito" a "Entregado" -->
             <button 
               v-if="envio.estado === 'En Tránsito'"
               @click="cambiarEstado(envio, 'Entregado')" 
-              class="w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-bold transition-all shadow-md mt-2 flex justify-center items-center gap-2">
-              ✅ Marcar como Entregado
+              class="w-full bg-green-600 hover:bg-green-700 text-white py-3.5 rounded-xl text-sm font-black transition-all shadow-md mt-2 flex justify-center items-center gap-2 active:scale-[0.98]">
+              ✅ MARCAR COMO ENTREGADO
             </button>
           </div>
         </div>
       </div>
     </div>
 
-
-    <!-- ======================================================== -->
-    <!-- ZONA 2: IMPRESIÓN (Solo visible en el papel por la clase print-area) -->
-    <!-- ======================================================== -->
     <div class="hidden print-area" v-if="despachoAImprimir">
       <div class="border-4 border-black p-10 text-center w-full max-w-4xl font-sans bg-white">
         <h1 class="text-4xl font-black mb-4 uppercase tracking-tight">DESTINO: {{ despachoAImprimir.cliente }}</h1>
@@ -263,7 +287,7 @@ onMounted(() => {
         </div>
 
         <p class="mt-10 text-lg font-bold text-gray-600">
-          Fecha de Despacho: {{ new Date().toLocaleDateString() }} - Impreso por Sistema
+          Fecha de Despacho: {{ new Date().toLocaleDateString() }} - MODITEX Logística
         </p>
       </div>
     </div>
@@ -271,22 +295,10 @@ onMounted(() => {
   </div>
 </template>
 
-<!-- ======================================================== -->
-<!-- ESTILOS GLOBALES DE IMPRESIÓN (SIN "scoped") -->
-<!-- ======================================================== -->
 <style>
 @media print {
-  /* 1. Ocultamos absolutamente TODO el sistema (Sidebar incluido) */
-  body * {
-    visibility: hidden !important;
-  }
-  
-  /* 2. Hacemos visible SOLO nuestra etiqueta y sus elementos hijos */
-  .print-area, .print-area * {
-    visibility: visible !important;
-  }
-  
-  /* 3. Forzamos a que la etiqueta se clave arriba a la izquierda como dueña de la hoja */
+  body * { visibility: hidden !important; }
+  .print-area, .print-area * { visibility: visible !important; }
   .print-area {
     position: absolute !important;
     left: 0 !important;
@@ -301,22 +313,17 @@ onMounted(() => {
     justify-content: center !important;
     align-items: flex-start !important;
   }
-  
-  /* 4. Quitamos márgenes automáticos de la impresora para que no salga descuadrado */
-  @page {
-    margin: 0;
-    size: auto;
-  }
+  @page { margin: 0; size: auto; }
 }
 </style>
 
-<!-- ======================================================== -->
-<!-- ESTILOS LOCALES PARA ANIMACIONES (CON "scoped") -->
-<!-- ======================================================== -->
 <style scoped>
 .animate-fade-in { animation: fadeIn 0.4s ease-out; }
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+.overflow-y-auto::-webkit-scrollbar { width: 6px; }
+.overflow-y-auto::-webkit-scrollbar-track { background: transparent; }
+.overflow-y-auto::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
 </style>

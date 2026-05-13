@@ -16,73 +16,76 @@ const router = createRouter({
       component: () => import('../views/AlmacenView.vue')
     },
     {
-      // NUEVA RUTA AQUÍ
       path: '/ingenieria',
       name: 'ingenieria',
       component: () => import('../views/IngenieriaView.vue')
     },
     {
-      // NUEVA RUTA AQUÍ
       path: '/produccion',
       name: 'produccion',
       component: () => import('../views/ProduccionView.vue')
     },
     {
-      // LA ÚLTIMA PIEZA DEL ROMPECABEZAS
       path: '/despachos',
       name: 'despachos',
       component: () => import('../views/DespachosView.vue')
     },
-      {
-      // LA ÚLTIMA PIEZA DEL ROMPECABEZAS
+    {
       path: '/talleres',
       name: 'talleres',
       component: () => import('../views/TalleresView.vue')  
-      },
-      {
+    },
+    {
       path: '/productos',
       name: 'productos',
       component: () => import('../views/ProductosView.vue')
     },
     {
-    path: '/control-ordenes',
-    name: 'control-ordenes',
-    component: () => import('../views/ControlOrdenesView.vue')
-  },
-  {
-    path: '/almacen-terminados',
-    name: 'almacen-terminados',
-    component: () => import('../views/AlmacenTerminadosView.vue') 
-  },
-  {
-    path: '/traslados',
-    name: 'traslados',
-    component: () => import('../views/TrasladosView.vue')
-  },
-  {
-    path: '/punto-venta',
-    name: 'punto-venta',
-    component: () => import('../views/PuntoVentaView.vue')
-  },
-  {
-  path: '/config-colores',
-  name: 'config-colores',
-  component: () => import('../views/ColoresView.vue')
-},
-{
+      path: '/control-ordenes',
+      name: 'control-ordenes',
+      component: () => import('../views/ControlOrdenesView.vue')
+    },
+    {
+      path: '/almacen-terminados',
+      name: 'almacen-terminados',
+      component: () => import('../views/AlmacenTerminadosView.vue') 
+    },
+    {
+      path: '/traslados',
+      name: 'traslados',
+      component: () => import('../views/TrasladosView.vue')
+    },
+    {
+      path: '/punto-venta',
+      name: 'punto-venta',
+      component: () => import('../views/PuntoVentaView.vue')
+    },
+    // 🔥 NUEVA RUTA PARA EL ESCÁNER MÓVIL 🔥
+    {
+      path: '/escaner',
+      name: 'escaner-movil',
+      component: () => import('../views/EscanerMovil.vue'),
+      meta: { 
+        hideLayout: true // Propiedad para ocultar el menú de navegación en el celular
+      }
+    },
+    {
+      path: '/config-colores',
+      name: 'config-colores',
+      component: () => import('../views/ColoresView.vue')
+    },
+    {
       path: '/liquidaciones',
       name: 'Liquidaciones',
-      component: () => import('../views/LiquidacionesView.vue'), // Ajusta la ruta según tu carpeta
+      component: () => import('../views/LiquidacionesView.vue'),
       meta: { title: 'Liquidación de Costos' }
     },
     {
-  path: '/produccion/nueva-orden',
-  name: 'NuevaOrdenCorte',
-  component: () => import('../views/OrdenCorteView.vue')
-}
+      path: '/produccion/nueva-orden',
+      name: 'NuevaOrdenCorte',
+      component: () => import('../views/OrdenCorteView.vue')
+    }
   ],
-
-  
 })
 
 router.addRoute({ path: '/login', name: 'login', component: () => import('../views/LoginView.vue') });
