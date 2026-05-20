@@ -349,13 +349,16 @@ const abrirEtiquetas = async (item: any) => {
 // ==========================================
 // 2. IMPRESIÓN FÍSICA (Diseño Premium Rediseñado)
 // ==========================================
+// ==========================================
+// 2. IMPRESIÓN FÍSICA (Diseño Premium Rediseñado)
+// ==========================================
 const imprimirEtiquetas = () => {
   const svgContenedor = document.getElementById('contenedor-barcode')?.innerHTML || '';
   const nombrePrenda = itemEtiqueta.value.producto.nombre;
   const nombreColor = getNombreColor(itemEtiqueta.value.color); 
   
-  // Condicionamos el precio
-  const precioMostrar = precioEtiqueta.value ? `PRECIO S/ ${Number(precioEtiqueta.value).toFixed(2)}` : '';
+  // 🔥 AQUÍ EL CAMBIO: Se quitó la palabra "PRECIO", solo queda "S/ 0.00"
+  const precioMostrar = precioEtiqueta.value ? `S/ ${Number(precioEtiqueta.value).toFixed(2)}` : '';
   const marcaMostrar = marcaEtiqueta.value;
 
   const ventana = window.open('', 'PRINT', 'height=600,width=800');
@@ -400,8 +403,6 @@ const imprimirEtiquetas = () => {
       .etiqueta:nth-child(odd) { padding-right: 2mm; padding-left: 1mm; } 
       .etiqueta:nth-child(even) { padding-left: 2mm; padding-right: 1mm; } 
 
-      /* 🔥 NUEVOS ESTILOS INTERNOS DE LA ETIQUETA 🔥 */
-      /* El precio ahora es gigante (20px) para que sea súper notorio y relevante */
       .precio { font-size: 20px; font-weight: 900; margin-bottom: 2px; line-height: 1; letter-spacing: -0.5px; }
       .marca { font-size: 16px; font-weight: 900; letter-spacing: 1px; margin-bottom: 2px; text-transform: uppercase; line-height: 1; }
       .tipo-prenda { font-size: 8px; font-weight: bold; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
@@ -417,7 +418,6 @@ const imprimirEtiquetas = () => {
       .talla-gigante { font-size: 22px; font-weight: 900; line-height: 0.8; }
       .color-texto { font-size: 9px; font-weight: bold; text-transform: uppercase; }
 
-      /* Estilos del Conejo Chill (Sin cambios) */
       .etiqueta-chill {
         position: relative; 
         width: 100%;
