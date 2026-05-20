@@ -38,9 +38,10 @@ const movilVinculado = ref(false);
 const mostrarVinculacion = ref(false); 
 let socket: Socket;
 
+// 🚀 CORRECCIÓN: Usamos la URL del Frontend actual (Vercel) para que el QR abra la página correcta
 const urlVinculacion = computed(() => {
-  // 🚨 ASEGÚRATE DE QUE ESTA SEA TU IP REAL 🚨
-  return `http://192.168.100.252:5173/escaner?pin=${pinConexion.value}`;
+  // window.location.origin tomará "https://moditex.vercel.app" automáticamente
+  return `${window.location.origin}/escaner?pin=${pinConexion.value}`;
 });
 
 // Cierra el acordeón del QR si el celular se conecta
@@ -141,7 +142,7 @@ const quitarDelCarrito = (index: number) => {
 // ==========================================
 const clienteNombre = ref('');
 const tipoVenta = ref('MINORISTA');
-const metodoEntrega = ref('ENTREGA_INMEDIATA'); // Inmediata, Recojo o Agencia
+const metodoEntrega = ref('ENTREGA_INMEDIATA'); 
 const destinoEnvio = ref('');
 const modalTicket = ref(false);
 const ventaRealizada = ref<any>(null);
@@ -150,7 +151,6 @@ const imprimirTicket = () => {
   const ventana = window.open('', 'PRINT', 'height=600,width=400');
   const fecha = new Date().toLocaleString();
   
-  // Plantilla HTML optimizada para ticketeras térmicas (80mm)
   ventana!.document.write(`
     <html><head><style>
       @page { margin: 0; }
@@ -229,16 +229,14 @@ const procesarSalida = async () => {
     };
 
     const res = await api.post('/ventas', payload);
-    ventaRealizada.value = res.data; // Guardamos info para el ticket
+    ventaRealizada.value = res.data; 
     
-    // Mostramos el modal de impresión (A menos que sea envío por agencia mayorista puro)
     if (metodoEntrega.value === 'ENTREGA_INMEDIATA' || metodoEntrega.value === 'RECOJO_TIENDA') {
       modalTicket.value = true;
     } else {
       alert("✅ Venta registrada. Se ha notificado a logística para su despacho por Agencia.");
     }
 
-    // Limpiamos pantalla
     carrito.value = [];
     clienteNombre.value = '';
     destinoEnvio.value = '';
@@ -264,8 +262,15 @@ onMounted(async () => {
     localStorage.setItem('pos_scanner_pin', pinConexion.value);
   }
 
-  // 🚨 RECUERDA PONER TU IP AQUÍ 🚨
-  socket = io('http://192.168.100.252:3000'); 
+  // 🚀 CORRECCIÓN: URL dinámica para Sockets
+  const urlSocket = import.meta.env.VITE_API_URL 
+    ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') 
+    : 'https://sistema-textil-backend-production.up.railway.app';
+
+  socket = io(urlSocket, {
+    transports: ['websocket'],
+    reconnectionAttempts: 5
+  }); 
 
   socket.on('connect', () => {
     socket.emit('crear-sala', { pin: pinConexion.value });

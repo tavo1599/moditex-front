@@ -2,10 +2,10 @@ import axios from 'axios';
 
 // Creamos la instancia base
 const api = axios.create({
-  baseURL: 'http://192.168.101.10:3000', // La ruta de tu backend
+  baseURL: 'http://192.168.100.252:3000', // La ruta de tu backend
 });
 
-// 1. EL INTERCEPTOR DE PETICIÓN (Lo que ya tenías)
+// 1. EL INTERCEPTOR DE PETICIÓN
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token'); 
   
@@ -18,7 +18,7 @@ api.interceptors.request.use((config) => {
   return Promise.reject(error);
 });
 
-// 2. EL INTERCEPTOR DE RESPUESTA (Lo que te faltaba)
+// 2. EL INTERCEPTOR DE RESPUESTA
 api.interceptors.response.use(
   (response) => response, // Si todo sale bien, deja pasar la respuesta
   (error) => {
