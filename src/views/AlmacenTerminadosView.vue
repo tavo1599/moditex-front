@@ -18,6 +18,7 @@ const filasExpandidas = ref<Record<string, boolean>>({});
 // 🔥 NUEVO: Estados para Filtros Avanzados de Kardex (Talla y Color)
 const filtroKardexTalla = ref('');
 const filtroKardexColor = ref('');
+const filtroKardexAlmacen = ref<number | ''>('');
 
 // Modales
 const modalBodega = ref(false);
@@ -146,6 +147,11 @@ const inventarioFiltrado = computed(() => {
   // 3. Filtro Combinado: Color
   if (filtroKardexColor.value) {
     resultado = resultado.filter(item => item.color === filtroKardexColor.value);
+  }
+
+  if (filtroKardexAlmacen.value) {
+    // Usamos Number() para evitar problemas si el HTML lo manda como texto
+    resultado = resultado.filter(item => Number(item.bodegaId) === Number(filtroKardexAlmacen.value));
   }
 
   return resultado;
@@ -535,29 +541,43 @@ onMounted(cargarDatos);
           <div class="h-8 w-px bg-gray-200 hidden md:block"></div> <!-- Separador visual -->
 
           <!-- Nuevos Filtros Combinados -->
-          <div class="flex flex-wrap gap-3 items-end">
-            <div class="flex flex-col">
-              <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Filtro Talla</label>
-              <select v-model="filtroKardexTalla" class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 min-w-[100px]">
-                <option value="">Todas</option>
-                <option v-for="talla in tallasDisponiblesKardex" :key="talla" :value="talla">{{ talla }}</option>
-              </select>
-            </div>
+         <div class="flex flex-wrap gap-3 items-end">
+  
+  <div class="flex flex-col">
+    <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Filtro Almacén</label>
+    <select v-model="filtroKardexAlmacen" class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 min-w-[140px]">
+      <option value="">Todos</option>
+      <option v-for="bodega in bodegas" :key="bodega.id" :value="bodega.id">
+        {{ bodega.nombre }}
+      </option>
+    </select>
+  </div>
 
-            <div class="flex flex-col">
-              <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Filtro Color</label>
-              <select v-model="filtroKardexColor" class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 min-w-[140px]">
-                <option value="">Todos</option>
-                <option v-for="color in colores" :key="color.codigo" :value="color.codigo">
-                  {{ color.nombre }}
-                </option>
-              </select>
-            </div>
+  <div class="flex flex-col">
+    <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Filtro Talla</label>
+    <select v-model="filtroKardexTalla" class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 min-w-[100px]">
+      <option value="">Todas</option>
+      <option v-for="talla in tallasDisponiblesKardex" :key="talla" :value="talla">{{ talla }}</option>
+    </select>
+  </div>
 
-            <button v-if="filtroKardexTalla || filtroKardexColor" @click="filtroKardexTalla = ''; filtroKardexColor = ''" class="mb-1.5 ml-2 text-xs font-bold text-red-500 hover:text-red-700 hover:underline transition-colors flex items-center gap-1">
-              <span>✕</span> Limpiar
-            </button>
-          </div>
+  <div class="flex flex-col">
+    <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Filtro Color</label>
+    <select v-model="filtroKardexColor" class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 min-w-[140px]">
+      <option value="">Todos</option>
+      <option v-for="color in colores" :key="color.codigo" :value="color.codigo">
+        {{ color.nombre }}
+      </option>
+    </select>
+  </div>
+
+  <button v-if="filtroKardexTalla || filtroKardexColor || filtroKardexAlmacen !== ''" 
+          @click="filtroKardexTalla = ''; filtroKardexColor = ''; filtroKardexAlmacen = ''" 
+          class="mb-1.5 ml-2 text-xs font-bold text-red-500 hover:text-red-700 hover:underline transition-colors flex items-center gap-1">
+    <span>✕</span> Limpiar
+  </button>
+  
+</div>
 
         </div>
         <!-- 🔥 FIN ZONA DE FILTROS 🔥 -->
