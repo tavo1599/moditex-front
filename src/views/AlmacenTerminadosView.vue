@@ -43,6 +43,9 @@ const modalEtiquetas = ref(false);
 const itemEtiqueta = ref<any>(null);
 const cantidadEtiquetas = ref(1);
 const codigoGenerado = ref('');
+// 🔥 NUEVO: Estados para Marca y Precio en etiquetas
+const marcaEtiqueta = ref('WEST');
+const precioEtiqueta = ref('');
 
 // Formularios
 const formBodega = ref({ nombre: '', tipo: 'Venta', direccion: '', estado: true });
@@ -322,6 +325,7 @@ const guardarAjuste = async () => {
 const abrirEtiquetas = async (item: any) => {
   itemEtiqueta.value = item;
   cantidadEtiquetas.value = item.stock > 0 ? item.stock : 1; 
+  precioEtiqueta.value = ''; // Limpiamos el precio anterior por si acaso
   
   const colorEncontrado = colores.value.find(c => c.codigo === item.color || c.nombre === item.color);
   const codigoColor = colorEncontrado ? colorEncontrado.codigo : item.color.substring(0, 3).toUpperCase();
@@ -332,7 +336,7 @@ const abrirEtiquetas = async (item: any) => {
   await nextTick();
   
   // 🔥 AJUSTE: Altura segura (40) para no causar error de desborde
-JsBarcode("#barcode-svg", codigoGenerado.value, {
+  JsBarcode("#barcode-svg", codigoGenerado.value, {
     format: "CODE128", 
     lineColor: "#000",
     width: 2,         // 🔥 Aumentamos a 2. Esto hace las barras el doble de gruesas y visibles de lejos.
@@ -343,12 +347,17 @@ JsBarcode("#barcode-svg", codigoGenerado.value, {
 };
 
 // ==========================================
-// 2. IMPRESIÓN FÍSICA (Diseño Premium 2 columnas - Corregido)
+// 2. IMPRESIÓN FÍSICA (Diseño Premium Rediseñado)
 // ==========================================
 const imprimirEtiquetas = () => {
   const svgContenedor = document.getElementById('contenedor-barcode')?.innerHTML || '';
   const nombrePrenda = itemEtiqueta.value.producto.nombre;
   const nombreColor = getNombreColor(itemEtiqueta.value.color); 
+  
+  // Condicionamos el precio
+  const precioMostrar = precioEtiqueta.value ? `PRECIO S/ ${Number(precioEtiqueta.value).toFixed(2)}` : '';
+  const marcaMostrar = marcaEtiqueta.value;
+
   const ventana = window.open('', 'PRINT', 'height=600,width=800');
   
   const frasesChillAmigos = [
@@ -364,7 +373,6 @@ const imprimirEtiquetas = () => {
 
   const fraseAleatoria = frasesChillAmigos[Math.floor(Math.random() * frasesChillAmigos.length)];
   const urlConejo = window.location.origin + '/conejo-chill.png';
-  const iconoAlgodon = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px; margin-top: -1px;"><path d="M12 2a3 3 0 0 0-3 3c0 .5.1.9.3 1.3A4.5 4.5 0 0 0 5 10.5c0 1.2.5 2.3 1.3 3A4 4 0 0 0 8 20.5a4 4 0 0 0 4-1.5 4 4 0 0 0 4 1.5 4 4 0 0 0 1.7-7 4.5 4.5 0 0 0-4.3-4.2A3 3 0 0 0 12 2z"/><path d="M12 22v-3"/></svg>`;
 
   ventana!.document.write(`
     <html><head><title>Etiquetas Moditex</title>
@@ -384,44 +392,51 @@ const imprimirEtiquetas = () => {
       
       .etiqueta { 
         width: 50.8mm; height: 37mm; 
-        display: flex; flex-direction: column; align-items: center; justify-content: center; 
+        display: flex; flex-direction: column; align-items: center; justify-content: flex-start; 
         overflow: hidden; 
+        padding-top: 2mm;
       }
       
-      .etiqueta:nth-child(odd) { padding-right: 2mm; } 
-      .etiqueta:nth-child(even) { padding-left: 2mm; } 
+      .etiqueta:nth-child(odd) { padding-right: 2mm; padding-left: 1mm; } 
+      .etiqueta:nth-child(even) { padding-left: 2mm; padding-right: 1mm; } 
 
-      .header-marca { display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; letter-spacing: 1px; width: 100%; border-bottom: 1px solid #000; padding-bottom: 1px; margin-bottom: 2px;}
-      .titulo { font-size: 8px; font-weight: bold; text-transform: uppercase; line-height: 1.1; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;}
-      .svg-container { width: 100%; display: flex; justify-content: center; margin: 1px 0; }
-      .svg-container svg { max-width: 46mm; height: auto; } 
-      .sku-lectura { font-family: monospace; font-size: 8px; font-weight: bold; margin-bottom: 2px; }
-      .atributos-caja { display: flex; justify-content: space-around; width: 95%; border: 1px solid #000; border-radius: 2px; padding: 1px; font-size: 8px; font-weight: bold; }
+      /* 🔥 NUEVOS ESTILOS INTERNOS DE LA ETIQUETA 🔥 */
+      .precio { font-size: 10px; font-weight: 900; margin-bottom: 1px; line-height: 1; }
+      .marca { font-size: 16px; font-weight: 900; letter-spacing: 1px; margin-bottom: 2px; text-transform: uppercase; line-height: 1; }
+      .tipo-prenda { font-size: 8px; font-weight: bold; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+      
+      .svg-container { width: 100%; display: flex; justify-content: center; margin: 2px 0; }
+      .svg-container svg { max-width: 44mm; height: auto; } 
+      .sku-lectura { font-family: monospace; font-size: 8px; font-weight: bold; margin-bottom: 2px; line-height: 1; }
+      
+      .footer-etiqueta { 
+        display: flex; justify-content: space-between; align-items: baseline; 
+        width: 95%; border-top: 1px dashed #000; padding-top: 3px; margin-top: 1px; 
+      }
+      .talla-gigante { font-size: 22px; font-weight: 900; line-height: 0.8; }
+      .color-texto { font-size: 9px; font-weight: bold; text-transform: uppercase; }
 
+      /* Estilos del Conejo Chill (Sin cambios) */
       .etiqueta-chill {
         position: relative; 
         width: 100%;
         height: 100%;
         overflow: hidden;
       }
-
-      /* 🔥 CONEJO AJUSTADO (Movido a la derecha) */
       .conejo-chill-image {
         position: absolute;
         bottom: 0;      
-        left: 1.5mm;    /* Antes estaba en -1mm, ahora le dimos espacio para que no se corte */
+        left: 1.5mm;    
         height: 100%;   
-        width: 43mm;    /* Ajustamos el ancho para compensar el movimiento */
+        width: 43mm;    
         object-fit: contain; 
         object-position: bottom left; 
         z-index: 1;
       }
-
-      /* 🔥 GLOBO AJUSTADO (Movido a la izquierda, más centrado) */
       .frase-globo {
         position: absolute;
         top: 4.5mm;      
-        right: 6mm;     /* Antes era 1.5mm. Al subir este número, se empuja hacia la izquierda */
+        right: 6mm;     
         background: #fff;
         color: #000;
         border: 1px solid #000; 
@@ -434,28 +449,8 @@ const imprimirEtiquetas = () => {
         text-align: center;
         z-index: 2; 
       }
-
-      /* El piquito del globo flotante (Alineado con el nuevo centro) */
-      .frase-globo::after {
-        content: '';
-        position: absolute;
-        bottom: -3px;
-        left: 2px; /* Movimos el piquito más al borde para que apunte bien a la cabeza */
-        border-width: 3px 3px 0 0;
-        border-style: solid;
-        border-color: #000 transparent transparent transparent;
-      }
-      
-      .frase-globo::before {
-        content: '';
-        position: absolute;
-        bottom: -1.5px;
-        left: 3px;
-        border-width: 2px 2px 0 0;
-        border-style: solid;
-        border-color: #fff transparent transparent transparent;
-        z-index: 1;
-      }
+      .frase-globo::after { content: ''; position: absolute; bottom: -3px; left: 2px; border-width: 3px 3px 0 0; border-style: solid; border-color: #000 transparent transparent transparent; }
+      .frase-globo::before { content: ''; position: absolute; bottom: -1.5px; left: 3px; border-width: 2px 2px 0 0; border-style: solid; border-color: #fff transparent transparent transparent; z-index: 1; }
     </style></head><body>
   `);
 
@@ -465,14 +460,14 @@ const imprimirEtiquetas = () => {
       if (i + j < cantidadEtiquetas.value) {
         ventana!.document.write(`
           <div class="etiqueta">
-            <div class="header-marca">${iconoAlgodon} MODITEX</div>
-            <div class="titulo">${nombrePrenda}</div>
+            ${precioMostrar ? `<div class="precio">${precioMostrar}</div>` : ''}
+            <div class="marca">${marcaMostrar}</div>
+            <div class="tipo-prenda">${nombrePrenda}</div>
             <div class="svg-container">${svgContenedor}</div>
             <div class="sku-lectura">${codigoGenerado.value}</div>
-            <div class="atributos-caja">
-              <span>TALLA: ${itemEtiqueta.value.talla}</span>
-              <span>|</span>
-              <span>COLOR: ${nombreColor.toUpperCase()}</span>
+            <div class="footer-etiqueta">
+              <span class="talla-gigante">${itemEtiqueta.value.talla}</span>
+              <span class="color-texto">${nombreColor}</span>
             </div>
           </div>
         `);
@@ -528,20 +523,15 @@ onMounted(cargarDatos);
     <template v-if="!cargando && vistaActiva === 'kardex'">
       <div class="space-y-4 animate-in fade-in duration-300">
         
-        <!-- 🔥 ZONA DE FILTROS MEJORADA (Stock + Talla + Color) 🔥 -->
         <div class="flex flex-wrap items-center gap-4 bg-white p-3 rounded-xl shadow-sm border border-gray-100">
           
-          <!-- Filtro de Stock (Original) -->
           <div class="flex gap-2 bg-gray-50 p-1 rounded-lg border border-gray-200">
             <button @click="filtroStock = 'con_stock'" class="px-3 py-1.5 rounded-md font-bold text-[10px] uppercase tracking-widest transition" :class="filtroStock === 'con_stock' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:bg-gray-100'">🟢 Disponibles</button>
             <button @click="filtroStock = 'critico'" class="px-3 py-1.5 rounded-md font-bold text-[10px] uppercase tracking-widest transition" :class="filtroStock === 'critico' ? 'bg-red-100 text-red-700 shadow-sm' : 'text-gray-500 hover:bg-gray-100'">🔴 Crítico 🚨</button>
             <button @click="filtroStock = 'agotados'" class="px-3 py-1.5 rounded-md font-bold text-[10px] uppercase tracking-widest transition" :class="filtroStock === 'agotados' ? 'bg-gray-800 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'">⚫ Agotados</button>
           </div>
 
-          <div class="h-8 w-px bg-gray-200 hidden md:block"></div> <!-- Separador visual -->
-
-          <!-- Nuevos Filtros Combinados -->
-         <div class="flex flex-wrap gap-3 items-end">
+          <div class="h-8 w-px bg-gray-200 hidden md:block"></div> <div class="flex flex-wrap gap-3 items-end">
   
   <div class="flex flex-col">
     <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Filtro Almacén</label>
@@ -580,8 +570,6 @@ onMounted(cargarDatos);
 </div>
 
         </div>
-        <!-- 🔥 FIN ZONA DE FILTROS 🔥 -->
-
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table class="w-full text-left text-sm">
             <thead class="bg-gray-50 text-gray-500 font-bold uppercase text-[10px] tracking-wider border-b border-gray-200">
@@ -603,7 +591,6 @@ onMounted(cargarDatos);
                   <td class="p-3"></td> <td class="p-3 text-xs font-bold text-gray-500 pl-8">↳ Variante</td>
                   <td class="p-3"><span class="font-bold text-gray-700">{{ item.bodega.nombre }}</span></td>
                   
-                  <!-- 🔥 FIX DE COLOR HEX: Ahora busca el color real dinámicamente 🔥 -->
                   <td class="p-3 text-gray-700 font-bold flex items-center gap-2">
                     <span class="w-3 h-3 rounded-full border border-gray-300 shadow-sm inline-block" 
                           :style="{ backgroundColor: colores.find(c => c.codigo === item.color || c.nombre === item.color)?.hex || colores.find(c => c.codigo === item.color || c.nombre === item.color)?.codigoHex || '#e5e7eb' }">
@@ -620,7 +607,6 @@ onMounted(cargarDatos);
                 </tr>
               </template>
               
-              <!-- Mensaje si los filtros no encuentran nada -->
               <tr v-if="Object.keys(inventarioAgrupado).length === 0">
                 <td colspan="7" class="p-8 text-center text-gray-400 font-bold">
                   No se encontraron productos con la combinación de filtros seleccionada.
@@ -833,7 +819,25 @@ onMounted(cargarDatos);
             </div>
             <p class="text-xs font-bold text-gray-800 mt-2">Talla: {{ itemEtiqueta?.talla }} | Col: {{ getNombreColor(itemEtiqueta?.color) }}</p>
           </div>
-          <div class="w-full space-y-4">
+          
+          <div class="w-full space-y-4 text-left">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Precio (Opcional)</label>
+                <div class="relative">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">S/</span>
+                  <input type="number" v-model="precioEtiqueta" placeholder="0.00" class="w-full border-2 border-gray-200 p-2 pl-8 rounded-xl font-bold text-gray-800 outline-none focus:border-blue-500">
+                </div>
+              </div>
+              <div>
+                <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Marca</label>
+                <select v-model="marcaEtiqueta" class="w-full border-2 border-gray-200 p-2 rounded-xl font-bold text-gray-800 outline-none focus:border-blue-500">
+                  <option value="WEST">WEST</option>
+                  <option value="TENSOЯ">TENSOЯ</option>
+                </select>
+              </div>
+            </div>
+
             <div>
               <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 text-center">¿Cuántas etiquetas necesitas?</label>
               <input type="number" v-model.number="cantidadEtiquetas" min="1" class="w-full border-2 border-gray-200 p-3 rounded-xl text-2xl text-center font-black text-gray-800 outline-none focus:border-blue-500">
