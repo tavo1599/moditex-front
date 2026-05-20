@@ -394,14 +394,15 @@ const imprimirEtiquetas = () => {
         width: 50.8mm; height: 37mm; 
         display: flex; flex-direction: column; align-items: center; justify-content: flex-start; 
         overflow: hidden; 
-        padding-top: 2mm;
+        padding-top: 1mm;
       }
       
       .etiqueta:nth-child(odd) { padding-right: 2mm; padding-left: 1mm; } 
       .etiqueta:nth-child(even) { padding-left: 2mm; padding-right: 1mm; } 
 
       /* 🔥 NUEVOS ESTILOS INTERNOS DE LA ETIQUETA 🔥 */
-      .precio { font-size: 10px; font-weight: 900; margin-bottom: 1px; line-height: 1; }
+      /* El precio ahora es gigante (20px) para que sea súper notorio y relevante */
+      .precio { font-size: 20px; font-weight: 900; margin-bottom: 2px; line-height: 1; letter-spacing: -0.5px; }
       .marca { font-size: 16px; font-weight: 900; letter-spacing: 1px; margin-bottom: 2px; text-transform: uppercase; line-height: 1; }
       .tipo-prenda { font-size: 8px; font-weight: bold; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
       
@@ -609,7 +610,7 @@ onMounted(cargarDatos);
               
               <tr v-if="Object.keys(inventarioAgrupado).length === 0">
                 <td colspan="7" class="p-8 text-center text-gray-400 font-bold">
-                  No se encontraron productos con la combinación de filtros seleccionada.
+                  No se encontraron productos con la combination de filtros seleccionada.
                 </td>
               </tr>
             </tbody>
