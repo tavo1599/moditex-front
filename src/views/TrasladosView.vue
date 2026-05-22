@@ -4,8 +4,8 @@ import api from '../api/axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QrcodeVue from 'qrcode.vue'; 
-import QRCode from 'qrcode';
-import { useScanner } from '../composables/useScanner'; // 🔥 TU COMPOSABLE MÁGICO
+import QRCode from 'qrcode'; // 🔥 ESTA ES LA LÍNEA QUE FALTABA
+import { useScanner } from '../composables/useScanner';
 
 // --- DEFINICIÓN DE TIPOS ---
 type MatrizPlana = Record<string, number>;
@@ -29,9 +29,10 @@ interface ItemInventario {
 
 // --- ESTADOS REACTIVOS ---
 const bodegas = ref<any[]>([]);
-const inventarioTotal = ref<ItemInventario[]>([]);
+const inventarioTotal = ref<any[]>([]); // o ref<ItemInventario[]> si tienes la interfaz
+const colores = ref<any[]>([]); 
 const cargando = ref(true);
-const procesando = ref(false);
+const procesando = ref(false); // 🔥 ESTA ES LA LÍNEA QUE FALTA
 
 const form = ref({
   origenId: '',
@@ -105,9 +106,12 @@ const procesarCodigo = (codigoEscaneado: string) => {
     return alert('⚠️ Selecciona primero la Bodega de Origen para comenzar a escanear.');
   }
 
-  const itemEncontrado = inventarioTotal.value.find(
-    (inv: ItemInventario) => inv.bodegaId === Number(form.value.origenId) && 
-    (inv.skuBarras === codigoEscaneado || inv.producto.skuBase === codigoEscaneado)
+  const codigoLimpio = codigoEscaneado.trim().toUpperCase();
+
+  // 🔥 AHORA BUSCAMOS EN inventarioConSKU.value Y USAMOS skuCalculado
+  const itemEncontrado = inventarioConSKU.value.find(
+    (inv: any) => inv.bodegaId === Number(form.value.origenId) && 
+    (inv.skuCalculado === codigoLimpio || inv.skuBarras === codigoLimpio || inv.producto.skuBase === codigoLimpio)
   );
 
   if (!itemEncontrado) {
@@ -129,7 +133,6 @@ const procesarCodigo = (codigoEscaneado: string) => {
       matrizCantidades.value[llave] = cantidadActual + 1;
       ultimoEscaneado.value = `+1 ${itemEncontrado.producto.nombre} (${itemEncontrado.color} - ${itemEncontrado.talla})`;
       
-      // Actualizamos el celular en tiempo real
       sincronizarMatrizAlCelular();
 
       setTimeout(() => ultimoEscaneado.value = '', 3000);
@@ -138,21 +141,37 @@ const procesarCodigo = (codigoEscaneado: string) => {
 };
 
 // --- CARGA DE DATOS ---
+// --- CARGA DE DATOS ---
 const cargarDatos = async () => {
   cargando.value = true;
   try {
-    const [resBodegas, resInv] = await Promise.all([
+    const [resBodegas, resInv, resColores] = await Promise.all([
       api.get('/almacen-terminados/bodegas'),
-      api.get('/almacen-terminados/inventario')
+      api.get('/almacen-terminados/inventario'),
+      api.get('/colores') // 🔥 Traemos los colores
     ]);
     bodegas.value = resBodegas.data.filter((b: any) => b.estado); 
     inventarioTotal.value = resInv.data;
+    colores.value = resColores.data || [];
   } catch (error) {
     console.error("Error al cargar datos logísticos:", error);
   } finally {
     cargando.value = false;
   }
 };
+
+// 🔥 NUEVO: GENERADOR DE SKU IGUAL AL DEL PUNTO DE VENTA
+const inventarioConSKU = computed(() => {
+  return inventarioTotal.value.map(item => {
+    const colorObj = colores.value.find(c => c.codigo === item.color || c.nombre === item.color);
+    const codigoColor = colorObj ? colorObj.codigo : String(item.color).substring(0, 3).toUpperCase();
+    const idProd = item.productoId || item.producto?.id;
+    return { 
+      ...item, 
+      skuCalculado: `PRD${idProd}-${codigoColor}-${item.talla}`.toUpperCase() 
+    };
+  });
+});
 
 const productosEnOrigen = computed(() => {
   if (!form.value.origenId) return [];
