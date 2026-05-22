@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import api from '../api/axios';
 import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 // --- DEFINICIÓN DE TIPOS ---
-// 🔥 TRUCO MAESTRO: Ahora es de un solo nivel. Llave = "Color|Talla", Valor = Cantidad
 type MatrizPlana = Record<string, number>;
 
 interface Producto {
@@ -22,6 +21,7 @@ interface ItemInventario {
   color: string;
   talla: string;
   stock: number;
+  skuBarras?: string; // 🔥 Agregado para el escáner
   producto: Producto;
 }
 
@@ -40,9 +40,72 @@ const form = ref({
 const tallasDisponibles = ref<string[]>([]);
 const coloresDisponibles = ref<string[]>([]);
 
-// Matrices Planas (TypeScript no se quejará nunca de esto)
 const matrizStock = ref<MatrizPlana>({});
 const matrizCantidades = ref<MatrizPlana>({});
+
+// --- LÓGICA DEL ESCÁNER DE CÓDIGOS ---
+const bufferEscaner = ref('');
+let timeoutEscaner: ReturnType<typeof setTimeout> | null = null;
+const ultimoEscaneado = ref('');
+
+const manejarEscaneo = (e: KeyboardEvent) => {
+  // Ignoramos si el usuario está escribiendo manualmente dentro de un input
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
+    return;
+  }
+
+  if (e.key === 'Enter') {
+    if (bufferEscaner.value.length > 3) {
+      procesarCodigo(bufferEscaner.value.trim());
+    }
+    bufferEscaner.value = '';
+  } else {
+    bufferEscaner.value += e.key;
+    
+    // Si hay una pausa de más de 50ms, fue un humano tecleando, no el lector láser
+    if (timeoutEscaner) clearTimeout(timeoutEscaner);
+    timeoutEscaner = setTimeout(() => {
+      bufferEscaner.value = '';
+    }, 50);
+  }
+};
+
+const procesarCodigo = (codigoEscaneado: string) => {
+  if (!form.value.origenId) {
+    return alert('⚠️ Selecciona primero la Bodega de Origen para comenzar a escanear.');
+  }
+
+  // Buscamos el ítem por skuBarras o skuBase en la bodega seleccionada
+  const itemEncontrado = inventarioTotal.value.find(
+    (inv: ItemInventario) => inv.bodegaId === Number(form.value.origenId) && 
+    (inv.skuBarras === codigoEscaneado || inv.producto.skuBase === codigoEscaneado)
+  );
+
+  if (!itemEncontrado) {
+    return alert(`❌ El código ${codigoEscaneado} no se encuentra en esta bodega o está agotado.`);
+  }
+
+  // Si escanea un modelo diferente al que está viendo, cambiamos la matriz automáticamente
+  if (form.value.productoPadreId !== itemEncontrado.productoId.toString()) {
+    form.value.productoPadreId = itemEncontrado.productoId.toString();
+  }
+
+  // Damos 100ms para que Vue redibuje la matriz si es que hubo un cambio de producto
+  setTimeout(() => {
+    const llave = `${itemEncontrado.color}|${itemEncontrado.talla}`;
+    const cantidadActual = matrizCantidades.value[llave] || 0;
+    const stockDisponible = matrizStock.value[llave] || 0;
+
+    if (cantidadActual + 1 > stockDisponible) {
+      alert(`⚠️ Cuidado: No hay suficiente stock disponible para ${itemEncontrado.color} - Talla ${itemEncontrado.talla}.`);
+    } else {
+      matrizCantidades.value[llave] = cantidadActual + 1;
+      
+      ultimoEscaneado.value = `+1 ${itemEncontrado.producto.nombre} (${itemEncontrado.color} - ${itemEncontrado.talla})`;
+      setTimeout(() => ultimoEscaneado.value = '', 3000);
+    }
+  }, 100);
+};
 
 // --- CARGA DE DATOS ---
 const cargarDatos = async () => {
@@ -103,7 +166,6 @@ watch([() => form.value.origenId, () => form.value.productoPadreId], ([origenId,
   const tempStock: MatrizPlana = {};
   const tempCantidades: MatrizPlana = {};
 
-  // Llenamos las matrices con una llave combinada: "Color|Talla"
   coloresDisponibles.value.forEach(color => {
     tallasDisponibles.value.forEach(talla => {
       const llave = `${color}|${talla}`;
@@ -118,7 +180,6 @@ watch([() => form.value.origenId, () => form.value.productoPadreId], ([origenId,
   matrizCantidades.value = tempCantidades;
 });
 
-// Calcular total de prendas
 const totalPrendasAMover = computed(() => {
   let total = 0;
   for (const llave in matrizCantidades.value) {
@@ -184,7 +245,6 @@ const registrarTrasladoLote = async () => {
 
   const detallesParaBackend = [];
   
-  // Recorremos las llaves planas
   for (const llave in matrizCantidades.value) {
     const cantidad = matrizCantidades.value[llave] || 0;
     
@@ -195,7 +255,6 @@ const registrarTrasladoLote = async () => {
         return alert(`X Error: Hay una cantidad que excede el stock disponible actual.`);
       }
       
-      // Separamos "Color|Talla" a variables individuales
       const [color, talla] = llave.split('|');
 
       detallesParaBackend.push({
@@ -241,7 +300,16 @@ const registrarTrasladoLote = async () => {
   }
 };
 
-onMounted(cargarDatos);
+// 🔥 Enganchamos el evento del escáner al montar el componente
+onMounted(() => {
+  cargarDatos();
+  window.addEventListener('keydown', manejarEscaneo);
+});
+
+// 🔥 Limpiamos el evento si el usuario sale a otra pantalla
+onUnmounted(() => {
+  window.removeEventListener('keydown', manejarEscaneo);
+});
 </script>
 
 <template>
@@ -250,7 +318,7 @@ onMounted(cargarDatos);
     <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
       <div>
         <h2 class="text-2xl md:text-3xl font-black text-gray-900 tracking-tight">Distribución Logística Interna 🔄</h2>
-        <p class="text-sm text-gray-500 mt-1 font-medium">Mueve grandes volúmenes de inventario a través de matrices automatizadas por producto.</p>
+        <p class="text-sm text-gray-500 mt-1 font-medium">Mueve grandes volúmenes de inventario a través de matrices y escáner láser.</p>
       </div>
       <div class="text-xs font-black text-blue-600 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 uppercase tracking-widest shrink-0">
         Control Multibodega Activo
@@ -290,15 +358,28 @@ onMounted(cargarDatos);
         <h3 class="text-lg font-black mb-4 flex items-center gap-2">
           <span class="text-blue-400 font-mono text-sm">03.</span> Configuración de Carga por Lotes
         </h3>
+
+        <div v-if="form.origenId" class="mb-6 flex justify-between items-center bg-gray-800/80 p-4 rounded-xl border border-gray-700 shadow-inner">
+          <div class="flex items-center gap-3">
+            <div class="relative flex h-3 w-3">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </div>
+            <span class="text-xs font-black text-gray-300 uppercase tracking-widest">Escáner Listo</span>
+          </div>
+          <div v-if="ultimoEscaneado" class="text-emerald-400 font-black text-sm animate-pulse tracking-wide">
+            {{ ultimoEscaneado }}
+          </div>
+        </div>
         
         <div v-if="!form.origenId" class="flex-1 border-2 border-dashed border-gray-700 rounded-2xl p-8 flex flex-col items-center justify-center text-center text-gray-500">
           <span class="text-3xl mb-2">🏭</span>
-          <p class="text-sm font-bold max-w-xs">Establece la bodega de origen para poder escanear los modelos con existencias.</p>
+          <p class="text-sm font-bold max-w-xs">Establece la bodega de origen para habilitar el lector de código de barras.</p>
         </div>
         
         <div v-else class="space-y-6 flex-1 flex flex-col">
           <select v-model="form.productoPadreId" class="w-full bg-gray-800 border border-gray-700 p-4 rounded-xl font-bold text-white outline-none focus:border-blue-500 text-sm cursor-pointer transition-all">
-            <option value="" disabled>Elige el Modelo de Ropa...</option>
+            <option value="" disabled>Elige el Modelo de Ropa (O escanea una prenda para seleccionarlo automáticamente)...</option>
             <option v-for="p in productosEnOrigen" :key="p.id" :value="p.id">
               {{ p.nombre }} {{ p.skuBase ? `(${p.skuBase})` : '' }}
             </option>
