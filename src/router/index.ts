@@ -90,6 +90,11 @@ const router = createRouter({
       name: 'NuevaOrdenCorte',
       component: () => import('../views/OrdenCorteView.vue')
     },
+    {
+      path: '/cobranzas',
+      name: 'cobranzas',
+      component: () => import('../views/CobranzasView.vue')
+    },  
     
   ],
 })
