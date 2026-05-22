@@ -4,8 +4,8 @@ import api from '../api/axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QrcodeVue from 'qrcode.vue'; 
-import QRCode from 'qrcode'; // 🔥 ESTA ES LA LÍNEA QUE FALTABA
-import { useScanner } from '../composables/useScanner';
+import QRCode from 'qrcode'; 
+import { useScanner } from '../composables/useScanner'; 
 
 // --- DEFINICIÓN DE TIPOS ---
 type MatrizPlana = Record<string, number>;
@@ -29,10 +29,10 @@ interface ItemInventario {
 
 // --- ESTADOS REACTIVOS ---
 const bodegas = ref<any[]>([]);
-const inventarioTotal = ref<any[]>([]); // o ref<ItemInventario[]> si tienes la interfaz
+const inventarioTotal = ref<ItemInventario[]>([]);
 const colores = ref<any[]>([]); 
 const cargando = ref(true);
-const procesando = ref(false); // 🔥 ESTA ES LA LÍNEA QUE FALTA
+const procesando = ref(false); 
 
 const form = ref({
   origenId: '',
@@ -44,7 +44,7 @@ const tallasDisponibles = ref<string[]>([]);
 const coloresDisponibles = ref<string[]>([]);
 
 const matrizStock = ref<MatrizPlana>({});
-const matrizCantidades = ref<MatrizPlana>({});
+const matrizCantidades = ref<MatrizPlana>({}); // AHORA ES GLOBAL: "productoId|color|talla"
 
 // --- ESTADOS DEL ESCÁNER (FÍSICO) ---
 const bufferEscaner = ref('');
@@ -61,18 +61,19 @@ const {
   emitirSincronizacion 
 } = useScanner(() => procesarCodigo(codigoEscaneadoRef.value), codigoEscaneadoRef);
 
-// Sincroniza la matriz con la pantalla del celular
+// Sincroniza TODO el carrito acumulado hacia el celular
 const sincronizarMatrizAlCelular = () => {
   const itemsParaCelular = [];
-  const productoBase = productosEnOrigen.value.find(p => p.id === Number(form.value.productoPadreId));
   
-  for (const llave in matrizCantidades.value) {
-    const cantidad = matrizCantidades.value[llave] || 0;
+  for (const llaveGlobal in matrizCantidades.value) {
+    const cantidad = matrizCantidades.value[llaveGlobal] || 0;
     if (cantidad > 0) {
-      const [color, talla] = llave.split('|');
+      const [prodIdStr, color, talla] = llaveGlobal.split('|');
+      const pBase = productosEnOrigen.value.find(p => p.id === Number(prodIdStr));
+      
       itemsParaCelular.push({
-        nombre: productoBase ? productoBase.nombre : 'Producto',
-        sku: productoBase ? productoBase.skuBase : '',
+        nombre: pBase ? pBase.nombre : 'Producto',
+        sku: pBase ? pBase.skuBase : '',
         talla: talla,
         color: color,
         cantidad: cantidad
@@ -108,7 +109,6 @@ const procesarCodigo = (codigoEscaneado: string) => {
 
   const codigoLimpio = codigoEscaneado.trim().toUpperCase();
 
-  // 🔥 AHORA BUSCAMOS EN inventarioConSKU.value Y USAMOS skuCalculado
   const itemEncontrado = inventarioConSKU.value.find(
     (inv: any) => inv.bodegaId === Number(form.value.origenId) && 
     (inv.skuCalculado === codigoLimpio || inv.skuBarras === codigoLimpio || inv.producto.skuBase === codigoLimpio)
@@ -118,29 +118,26 @@ const procesarCodigo = (codigoEscaneado: string) => {
     return alert(`❌ El código ${codigoEscaneado} no se encuentra en esta bodega o está agotado.`);
   }
 
+  // Llave global única para multiproducto
+  const llaveGlobal = `${itemEncontrado.productoId}|${itemEncontrado.color}|${itemEncontrado.talla}`;
+  const cantidadActual = matrizCantidades.value[llaveGlobal] || 0;
+
+  if (cantidadActual + 1 > itemEncontrado.stock) {
+    return alert(`⚠️ Cuidado: No hay suficiente stock disponible para ${itemEncontrado.color} - Talla ${itemEncontrado.talla}.`);
+  } 
+
+  matrizCantidades.value[llaveGlobal] = cantidadActual + 1;
+  ultimoEscaneado.value = `+1 ${itemEncontrado.producto.nombre} (${itemEncontrado.color} - ${itemEncontrado.talla})`;
+  
+  // Si escanea algo diferente, cambiamos la vista pero SIN borrar lo anterior
   if (form.value.productoPadreId !== itemEncontrado.productoId.toString()) {
     form.value.productoPadreId = itemEncontrado.productoId.toString();
   }
 
-  setTimeout(() => {
-    const llave = `${itemEncontrado.color}|${itemEncontrado.talla}`;
-    const cantidadActual = matrizCantidades.value[llave] || 0;
-    const stockDisponible = matrizStock.value[llave] || 0;
-
-    if (cantidadActual + 1 > stockDisponible) {
-      alert(`⚠️ Cuidado: No hay suficiente stock disponible para ${itemEncontrado.color} - Talla ${itemEncontrado.talla}.`);
-    } else {
-      matrizCantidades.value[llave] = cantidadActual + 1;
-      ultimoEscaneado.value = `+1 ${itemEncontrado.producto.nombre} (${itemEncontrado.color} - ${itemEncontrado.talla})`;
-      
-      sincronizarMatrizAlCelular();
-
-      setTimeout(() => ultimoEscaneado.value = '', 3000);
-    }
-  }, 100);
+  sincronizarMatrizAlCelular();
+  setTimeout(() => ultimoEscaneado.value = '', 3000);
 };
 
-// --- CARGA DE DATOS ---
 // --- CARGA DE DATOS ---
 const cargarDatos = async () => {
   cargando.value = true;
@@ -148,7 +145,7 @@ const cargarDatos = async () => {
     const [resBodegas, resInv, resColores] = await Promise.all([
       api.get('/almacen-terminados/bodegas'),
       api.get('/almacen-terminados/inventario'),
-      api.get('/colores') // 🔥 Traemos los colores
+      api.get('/colores')
     ]);
     bodegas.value = resBodegas.data.filter((b: any) => b.estado); 
     inventarioTotal.value = resInv.data;
@@ -160,7 +157,6 @@ const cargarDatos = async () => {
   }
 };
 
-// 🔥 NUEVO: GENERADOR DE SKU IGUAL AL DEL PUNTO DE VENTA
 const inventarioConSKU = computed(() => {
   return inventarioTotal.value.map(item => {
     const colorObj = colores.value.find(c => c.codigo === item.color || c.nombre === item.color);
@@ -187,13 +183,12 @@ const productosEnOrigen = computed(() => {
   return Array.from(productosMap.values());
 });
 
-// --- GENERADOR DE MATRIZ PLANA ---
+// --- GENERADOR DE VISTA DE MATRIZ (No borra las cantidades globales) ---
 watch([() => form.value.origenId, () => form.value.productoPadreId], ([origenId, prodId]) => {
   if (!origenId || !prodId) {
     tallasDisponibles.value = [];
     coloresDisponibles.value = [];
     matrizStock.value = {};
-    matrizCantidades.value = {};
     return;
   }
 
@@ -212,31 +207,35 @@ watch([() => form.value.origenId, () => form.value.productoPadreId], ([origenId,
   coloresDisponibles.value = Array.from(cSet).sort();
 
   const tempStock: MatrizPlana = {};
-  const tempCantidades: MatrizPlana = {};
 
   coloresDisponibles.value.forEach(color => {
     tallasDisponibles.value.forEach(talla => {
-      const llave = `${color}|${talla}`;
+      const llaveVista = `${color}|${talla}`;
+      const llaveGlobal = `${prodId}|${color}|${talla}`;
       const item = variaciones.find(v => v.color === color && v.talla === talla);
-      tempStock[llave] = item ? item.stock : 0;
-      tempCantidades[llave] = 0; 
+      
+      tempStock[llaveVista] = item ? item.stock : 0;
+      
+      // Solo inicializa en 0 si no existía antes en la memoria global
+      if (matrizCantidades.value[llaveGlobal] === undefined) {
+        matrizCantidades.value[llaveGlobal] = 0;
+      }
     });
   });
 
   matrizStock.value = tempStock;
-  matrizCantidades.value = tempCantidades;
 });
 
 const totalPrendasAMover = computed(() => {
   let total = 0;
-  for (const llave in matrizCantidades.value) {
-    total += matrizCantidades.value[llave] || 0;
+  for (const llaveGlobal in matrizCantidades.value) {
+    total += matrizCantidades.value[llaveGlobal] || 0;
   }
   return total;
 });
 
-// --- GENERAR PDF ---
-const generarGuiaTraslado = async (origen: any, destino: any, productoNombre: string, skuBase: string, detalles: any[], correlativo: string) => {
+// --- GENERAR PDF MULTIPRODUCTO ---
+const generarGuiaTraslado = async (origen: any, destino: any, detallesCompletos: any[], correlativo: string) => {
   const doc = new jsPDF();
   const qrDataUrl = await QRCode.toDataURL(correlativo);
 
@@ -268,7 +267,7 @@ const generarGuiaTraslado = async (origen: any, destino: any, productoNombre: st
   autoTable(doc, {
     startY: 85,
     head: [['Código Base', 'Descripción Producto', 'Variante Color', 'Talla', 'Volumen']],
-    body: detalles.map(d => [skuBase || 'N/A', productoNombre, d.color, d.talla, `${d.cantidad} uds`]),
+    body: detallesCompletos.map(d => [d.sku || 'N/A', d.nombre, d.color, d.talla, `${d.cantidad} uds`]),
     theme: 'grid',
     headStyles: { fillColor: [15, 23, 42] }
   });
@@ -283,24 +282,42 @@ const generarGuiaTraslado = async (origen: any, destino: any, productoNombre: st
   doc.save(`Guia_Traslado_${correlativo}.pdf`);
 };
 
-// --- PROCESAR OPERACIÓN ---
+// --- PROCESAR OPERACIÓN AL BACKEND ---
 const registrarTrasladoLote = async () => {
   if (totalPrendasAMover.value <= 0) return alert('⚠️ Por favor, ingresa al menos una cantidad.');
 
   const detallesParaBackend = [];
+  const detallesParaPDF = [];
   
-  for (const llave in matrizCantidades.value) {
-    const cantidad = matrizCantidades.value[llave] || 0;
+  for (const llaveGlobal in matrizCantidades.value) {
+    const cantidad = matrizCantidades.value[llaveGlobal] || 0;
     
     if (cantidad > 0) {
-      const stockDisponible = matrizStock.value[llave] || 0;
-      if (cantidad > stockDisponible) {
-        return alert(`X Error: Hay una cantidad que excede el stock disponible actual.`);
+      const [prodIdStr, color, talla] = llaveGlobal.split('|');
+
+      // Doble validación de seguridad antes de enviar
+      const itemOriginal = inventarioTotal.value.find(
+        i => i.bodegaId === Number(form.value.origenId) && 
+             i.productoId === Number(prodIdStr) && 
+             i.color === color && 
+             i.talla === talla
+      );
+
+      if (cantidad > (itemOriginal?.stock || 0)) {
+        return alert(`❌ Error: La cantidad excede el stock disponible para ${color} - ${talla}.`);
       }
       
-      const [color, talla] = llave.split('|');
       detallesParaBackend.push({
-        productoId: Number(form.value.productoPadreId),
+        productoId: Number(prodIdStr),
+        color: color,
+        talla: talla,
+        cantidad: cantidad
+      });
+
+      const pBase = productosEnOrigen.value.find(p => p.id === Number(prodIdStr));
+      detallesParaPDF.push({
+        nombre: pBase ? pBase.nombre : 'Producto',
+        sku: pBase ? pBase.skuBase : 'S/N',
         color: color,
         talla: talla,
         cantidad: cantidad
@@ -320,21 +337,14 @@ const registrarTrasladoLote = async () => {
     const bodegaOrigen = bodegas.value.find(b => b.id === Number(form.value.origenId));
     const bodegaDestino = bodegas.value.find(b => b.id === Number(form.value.destinoId));
     
-    const productoBase = productosEnOrigen.value.find(p => p.id === Number(form.value.productoPadreId));
-    if (!productoBase) throw new Error("No se pudo identificar el producto.");
+    await generarGuiaTraslado(bodegaOrigen, bodegaDestino, detallesParaPDF, correlativoInterno);
     
-    await generarGuiaTraslado(
-      bodegaOrigen, 
-      bodegaDestino, 
-      productoBase.nombre, 
-      productoBase.skuBase || 'S/N', 
-      detallesParaBackend, 
-      correlativoInterno
-    );
+    alert(`✅ Operación Completada con éxito. Traslado de ${totalPrendasAMover.value} unidades procesado.`);
     
-    alert(`✅ Operación Completada con éxito. Traslado de ${totalPrendasAMover.value} unidades procesado en lote.`);
+    // Limpieza total post-éxito
     form.value.productoPadreId = ''; 
-    emitirSincronizacion([]); // Limpiamos la pantalla del móvil al finalizar
+    matrizCantidades.value = {}; 
+    emitirSincronizacion([]); 
     await cargarDatos(); 
   } catch (error: any) {
     alert('❌ Error operativo: ' + (error.response?.data?.message || error.message || 'Fallo de comunicación'));
@@ -438,7 +448,7 @@ onUnmounted(() => {
         
         <div v-if="!form.origenId" class="flex-1 border-2 border-dashed border-gray-700 rounded-2xl p-8 flex flex-col items-center justify-center text-center text-gray-500">
           <span class="text-3xl mb-2">🏭</span>
-          <p class="text-sm font-bold max-w-xs">Establece la bodega de origen para habilitar el lector de código de barras y generar el QR de acceso.</p>
+          <p class="text-sm font-bold max-w-xs">Establece la bodega de origen para habilitar el lector de código de barras.</p>
         </div>
         
         <div v-else class="space-y-6 flex-1 flex flex-col">
@@ -469,7 +479,7 @@ onUnmounted(() => {
                       <div v-if="(matrizStock[`${color}|${talla}`] || 0) > 0" class="flex flex-col items-center gap-1">
                         <input 
                           type="number" 
-                          v-model.number="matrizCantidades[`${color}|${talla}`]" 
+                          v-model.number="matrizCantidades[`${form.productoPadreId}|${color}|${talla}`]" 
                           @change="sincronizarMatrizAlCelular"
                           min="0" 
                           :max="matrizStock[`${color}|${talla}`]"
@@ -487,7 +497,7 @@ onUnmounted(() => {
 
           <div class="mt-auto flex flex-col sm:flex-row gap-4 pt-4 border-t border-gray-800">
             <div class="bg-gray-800 rounded-xl p-3.5 border border-gray-700 text-center sm:w-44 shrink-0">
-              <p class="text-[9px] text-gray-400 font-black uppercase tracking-widest mb-0.5">Volumen de Lote</p>
+              <p class="text-[9px] text-gray-400 font-black uppercase tracking-widest mb-0.5">Volumen Acumulado</p>
               <p class="text-2xl font-black text-blue-400 font-mono">{{ totalPrendasAMover }} <span class="text-xs text-gray-400">uds</span></p>
             </div>
             
