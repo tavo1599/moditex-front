@@ -4,6 +4,7 @@ import api from '../api/axios';
 import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { io, Socket } from 'socket.io-client';
 
 // --- DEFINICIÓN DE TIPOS ---
 type MatrizPlana = Record<string, number>;
@@ -21,7 +22,7 @@ interface ItemInventario {
   color: string;
   talla: string;
   stock: number;
-  skuBarras?: string; // 🔥 Agregado para el escáner
+  skuBarras?: string; 
   producto: Producto;
 }
 
@@ -43,17 +44,62 @@ const coloresDisponibles = ref<string[]>([]);
 const matrizStock = ref<MatrizPlana>({});
 const matrizCantidades = ref<MatrizPlana>({});
 
-// --- LÓGICA DEL ESCÁNER DE CÓDIGOS ---
+// --- ESTADOS DEL ESCÁNER ---
 const bufferEscaner = ref('');
 let timeoutEscaner: ReturnType<typeof setTimeout> | null = null;
 const ultimoEscaneado = ref('');
 
+// --- ESTADOS DE CONEXIÓN MÓVIL (WEBSOCKETS) ---
+const pinConexion = ref('');
+const qrCodeUrl = ref('');
+const scannerMovilConectado = ref(false);
+let socketPc: Socket | null = null;
+
+// --- INICIALIZACIÓN DEL SOCKET Y QR ---
+const inicializarConexionMovil = async () => {
+  // 1. Generamos un PIN de 4 dígitos
+  pinConexion.value = Math.floor(1000 + Math.random() * 9000).toString();
+
+  // 2. Generamos el QR apuntando a la ruta de tu escáner móvil
+  const urlMovil = `${window.location.origin}/escaner?pin=${pinConexion.value}`;
+  qrCodeUrl.value = await QRCode.toDataURL(urlMovil, { 
+    width: 120, 
+    margin: 1, 
+    color: { dark: '#FFFFFF', light: '#1F2937' } 
+  });
+
+  // 3. Conectamos al backend
+  const urlBase = import.meta.env.VITE_API_URL 
+    ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') 
+    : 'https://sistema-textil-backend-production.up.railway.app';
+    
+  socketPc = io(urlBase, { transports: ['websocket'] });
+
+  socketPc.on('connect', () => {
+    socketPc?.emit('crear-sala', { pin: pinConexion.value });
+  });
+
+  socketPc.on('movil-conectado', () => {
+    scannerMovilConectado.value = true;
+    if (navigator.vibrate) navigator.vibrate(100);
+  });
+
+  socketPc.on('movil-desconectado', () => {
+    scannerMovilConectado.value = false;
+  });
+
+  socketPc.on('codigo-recibido', (data: { codigo: string, timestamp: string }) => {
+    if (data && data.codigo) {
+      procesarCodigo(data.codigo);
+    }
+  });
+};
+
+// --- LÓGICA DE PROCESAMIENTO DE CÓDIGOS ---
 const manejarEscaneo = (e: KeyboardEvent) => {
-  // Ignoramos si el usuario está escribiendo manualmente dentro de un input
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
     return;
   }
-
   if (e.key === 'Enter') {
     if (bufferEscaner.value.length > 3) {
       procesarCodigo(bufferEscaner.value.trim());
@@ -61,8 +107,6 @@ const manejarEscaneo = (e: KeyboardEvent) => {
     bufferEscaner.value = '';
   } else {
     bufferEscaner.value += e.key;
-    
-    // Si hay una pausa de más de 50ms, fue un humano tecleando, no el lector láser
     if (timeoutEscaner) clearTimeout(timeoutEscaner);
     timeoutEscaner = setTimeout(() => {
       bufferEscaner.value = '';
@@ -75,7 +119,6 @@ const procesarCodigo = (codigoEscaneado: string) => {
     return alert('⚠️ Selecciona primero la Bodega de Origen para comenzar a escanear.');
   }
 
-  // Buscamos el ítem por skuBarras o skuBase en la bodega seleccionada
   const itemEncontrado = inventarioTotal.value.find(
     (inv: ItemInventario) => inv.bodegaId === Number(form.value.origenId) && 
     (inv.skuBarras === codigoEscaneado || inv.producto.skuBase === codigoEscaneado)
@@ -85,12 +128,10 @@ const procesarCodigo = (codigoEscaneado: string) => {
     return alert(`❌ El código ${codigoEscaneado} no se encuentra en esta bodega o está agotado.`);
   }
 
-  // Si escanea un modelo diferente al que está viendo, cambiamos la matriz automáticamente
   if (form.value.productoPadreId !== itemEncontrado.productoId.toString()) {
     form.value.productoPadreId = itemEncontrado.productoId.toString();
   }
 
-  // Damos 100ms para que Vue redibuje la matriz si es que hubo un cambio de producto
   setTimeout(() => {
     const llave = `${itemEncontrado.color}|${itemEncontrado.talla}`;
     const cantidadActual = matrizCantidades.value[llave] || 0;
@@ -100,7 +141,6 @@ const procesarCodigo = (codigoEscaneado: string) => {
       alert(`⚠️ Cuidado: No hay suficiente stock disponible para ${itemEncontrado.color} - Talla ${itemEncontrado.talla}.`);
     } else {
       matrizCantidades.value[llave] = cantidadActual + 1;
-      
       ultimoEscaneado.value = `+1 ${itemEncontrado.producto.nombre} (${itemEncontrado.color} - ${itemEncontrado.talla})`;
       setTimeout(() => ultimoEscaneado.value = '', 3000);
     }
@@ -129,7 +169,6 @@ const productosEnOrigen = computed(() => {
   const stockEnBodega = inventarioTotal.value.filter(
     inv => inv.bodegaId === Number(form.value.origenId) && inv.stock > 0
   );
-  
   const productosMap = new Map<number, Producto>();
   stockEnBodega.forEach(item => {
     if (!productosMap.has(item.productoId) && item.producto) {
@@ -170,7 +209,6 @@ watch([() => form.value.origenId, () => form.value.productoPadreId], ([origenId,
     tallasDisponibles.value.forEach(talla => {
       const llave = `${color}|${talla}`;
       const item = variaciones.find(v => v.color === color && v.talla === talla);
-      
       tempStock[llave] = item ? item.stock : 0;
       tempCantidades[llave] = 0; 
     });
@@ -195,23 +233,20 @@ const generarGuiaTraslado = async (origen: any, destino: any, productoNombre: st
 
   doc.setFillColor(15, 23, 42); 
   doc.rect(0, 0, 210, 40, 'F');
-  
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(20);
   doc.setFont("helvetica", "bold");
   doc.text("GUÍA DE TRASLADO INTERNO", 15, 25);
-  
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 145, 25);
-
+  
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
   doc.text("ALMACÉN ORIGEN:", 15, 55); 
   doc.setFont("helvetica", "normal"); 
   doc.text(`${origen.nombre}`, 15, 62);
-  
   doc.setFont("helvetica", "bold");
   doc.text("ALMACÉN DESTINO:", 110, 55); 
   doc.setFont("helvetica", "normal"); 
@@ -250,13 +285,11 @@ const registrarTrasladoLote = async () => {
     
     if (cantidad > 0) {
       const stockDisponible = matrizStock.value[llave] || 0;
-      
       if (cantidad > stockDisponible) {
         return alert(`X Error: Hay una cantidad que excede el stock disponible actual.`);
       }
       
       const [color, talla] = llave.split('|');
-
       detallesParaBackend.push({
         productoId: Number(form.value.productoPadreId),
         color: color,
@@ -300,15 +333,15 @@ const registrarTrasladoLote = async () => {
   }
 };
 
-// 🔥 Enganchamos el evento del escáner al montar el componente
 onMounted(() => {
   cargarDatos();
   window.addEventListener('keydown', manejarEscaneo);
+  inicializarConexionMovil();
 });
 
-// 🔥 Limpiamos el evento si el usuario sale a otra pantalla
 onUnmounted(() => {
   window.removeEventListener('keydown', manejarEscaneo);
+  if (socketPc) socketPc.disconnect();
 });
 </script>
 
@@ -318,7 +351,7 @@ onUnmounted(() => {
     <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
       <div>
         <h2 class="text-2xl md:text-3xl font-black text-gray-900 tracking-tight">Distribución Logística Interna 🔄</h2>
-        <p class="text-sm text-gray-500 mt-1 font-medium">Mueve grandes volúmenes de inventario a través de matrices y escáner láser.</p>
+        <p class="text-sm text-gray-500 mt-1 font-medium">Mueve grandes volúmenes de inventario a través de matrices y escáner láser/móvil.</p>
       </div>
       <div class="text-xs font-black text-blue-600 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 uppercase tracking-widest shrink-0">
         Control Multibodega Activo
@@ -359,22 +392,39 @@ onUnmounted(() => {
           <span class="text-blue-400 font-mono text-sm">03.</span> Configuración de Carga por Lotes
         </h3>
 
-        <div v-if="form.origenId" class="mb-6 flex justify-between items-center bg-gray-800/80 p-4 rounded-xl border border-gray-700 shadow-inner">
-          <div class="flex items-center gap-3">
-            <div class="relative flex h-3 w-3">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+        <div v-if="form.origenId" class="mb-6 bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-inner flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+          <div class="flex-1 flex flex-col justify-center">
+            <h4 class="text-sm font-black text-white uppercase tracking-widest mb-1 flex items-center gap-2">
+              <span class="text-lg">📱</span> Escáner Móvil
+            </h4>
+            
+            <div v-if="scannerMovilConectado" class="mt-2 inline-flex items-center gap-2 text-emerald-400 bg-emerald-400/10 px-4 py-2 rounded-xl border border-emerald-400/20 w-fit">
+               <span class="relative flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>
+               <span class="text-xs font-bold uppercase tracking-wide">Vinculado y Listo</span>
             </div>
-            <span class="text-xs font-black text-gray-300 uppercase tracking-widest">Escáner Listo</span>
+            <div v-else class="mt-2 inline-flex items-center gap-2 text-gray-400 bg-gray-700/50 px-4 py-2 rounded-xl border border-gray-600 w-fit">
+               <span class="w-3 h-3 bg-gray-500 rounded-full animate-pulse"></span>
+               <span class="text-xs font-bold uppercase tracking-wide">Esperando conexión...</span>
+            </div>
+            
+            <div v-if="ultimoEscaneado" class="mt-3 text-emerald-400 font-black text-sm animate-pulse tracking-wide bg-black/30 px-3 py-1 rounded-lg w-fit">
+              {{ ultimoEscaneado }}
+            </div>
           </div>
-          <div v-if="ultimoEscaneado" class="text-emerald-400 font-black text-sm animate-pulse tracking-wide">
-            {{ ultimoEscaneado }}
+
+          <div v-if="!scannerMovilConectado" class="flex items-center gap-4 bg-gray-900 p-3 rounded-xl border border-gray-700 shrink-0">
+            <div class="text-right">
+              <p class="text-[9px] text-gray-500 uppercase tracking-widest font-bold">PIN de acceso</p>
+              <p class="text-3xl font-black text-white font-mono tracking-[0.2em]">{{ pinConexion }}</p>
+            </div>
+            <div class="h-12 w-px bg-gray-700 mx-2"></div>
+            <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="QR Scanner" class="w-20 h-20 rounded-lg shadow-lg" />
           </div>
         </div>
         
         <div v-if="!form.origenId" class="flex-1 border-2 border-dashed border-gray-700 rounded-2xl p-8 flex flex-col items-center justify-center text-center text-gray-500">
           <span class="text-3xl mb-2">🏭</span>
-          <p class="text-sm font-bold max-w-xs">Establece la bodega de origen para habilitar el lector de código de barras.</p>
+          <p class="text-sm font-bold max-w-xs">Establece la bodega de origen para habilitar el lector de código de barras y generar el QR de acceso.</p>
         </div>
         
         <div v-else class="space-y-6 flex-1 flex flex-col">
@@ -402,7 +452,6 @@ onUnmounted(() => {
                       {{ color }}
                     </td>
                     <td v-for="talla in tallasDisponibles" :key="talla" class="p-2">
-                      
                       <div v-if="(matrizStock[`${color}|${talla}`] || 0) > 0" class="flex flex-col items-center gap-1">
                         <input 
                           type="number" 
@@ -413,11 +462,7 @@ onUnmounted(() => {
                         />
                         <span class="text-[9px] font-bold text-emerald-400">Disp: {{ matrizStock[`${color}|${talla}`] }}</span>
                       </div>
-                      
-                      <div v-else class="text-gray-600 text-[9px] font-black uppercase py-3 select-none">
-                        -
-                      </div>
-                      
+                      <div v-else class="text-gray-600 text-[9px] font-black uppercase py-3 select-none">-</div>
                     </td>
                   </tr>
                 </tbody>
