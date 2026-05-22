@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import api from '../api/axios';
-import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { io, Socket } from 'socket.io-client';
+import QrcodeVue from 'qrcode.vue'; 
+import QRCode from 'qrcode';
+import { useScanner } from '../composables/useScanner'; // 🔥 TU COMPOSABLE MÁGICO
 
 // --- DEFINICIÓN DE TIPOS ---
 type MatrizPlana = Record<string, number>;
@@ -44,55 +45,40 @@ const coloresDisponibles = ref<string[]>([]);
 const matrizStock = ref<MatrizPlana>({});
 const matrizCantidades = ref<MatrizPlana>({});
 
-// --- ESTADOS DEL ESCÁNER ---
+// --- ESTADOS DEL ESCÁNER (FÍSICO) ---
 const bufferEscaner = ref('');
 let timeoutEscaner: ReturnType<typeof setTimeout> | null = null;
 const ultimoEscaneado = ref('');
 
-// --- ESTADOS DE CONEXIÓN MÓVIL (WEBSOCKETS) ---
-const pinConexion = ref('');
-const qrCodeUrl = ref('');
-const scannerMovilConectado = ref(false);
-let socketPc: Socket | null = null;
+// --- INTEGRACIÓN DEL COMPOSABLE DEL ESCÁNER MÓVIL ---
+const codigoEscaneadoRef = ref('');
+const { 
+  pinConexion, 
+  movilVinculado, 
+  mostrarVinculacion, 
+  urlVinculacion, 
+  emitirSincronizacion 
+} = useScanner(() => procesarCodigo(codigoEscaneadoRef.value), codigoEscaneadoRef);
 
-// --- INICIALIZACIÓN DEL SOCKET Y QR ---
-const inicializarConexionMovil = async () => {
-  // 1. Generamos un PIN de 4 dígitos
-  pinConexion.value = Math.floor(1000 + Math.random() * 9000).toString();
-
-  // 2. Generamos el QR apuntando a la ruta de tu escáner móvil
-  const urlMovil = `${window.location.origin}/escaner?pin=${pinConexion.value}`;
-  qrCodeUrl.value = await QRCode.toDataURL(urlMovil, { 
-    width: 120, 
-    margin: 1, 
-    color: { dark: '#FFFFFF', light: '#1F2937' } 
-  });
-
-  // 3. Conectamos al backend
-  const urlBase = import.meta.env.VITE_API_URL 
-    ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') 
-    : 'https://sistema-textil-backend-production.up.railway.app';
-    
-  socketPc = io(urlBase, { transports: ['websocket'] });
-
-  socketPc.on('connect', () => {
-    socketPc?.emit('crear-sala', { pin: pinConexion.value });
-  });
-
-  socketPc.on('movil-conectado', () => {
-    scannerMovilConectado.value = true;
-    if (navigator.vibrate) navigator.vibrate(100);
-  });
-
-  socketPc.on('movil-desconectado', () => {
-    scannerMovilConectado.value = false;
-  });
-
-  socketPc.on('codigo-recibido', (data: { codigo: string, timestamp: string }) => {
-    if (data && data.codigo) {
-      procesarCodigo(data.codigo);
+// Sincroniza la matriz con la pantalla del celular
+const sincronizarMatrizAlCelular = () => {
+  const itemsParaCelular = [];
+  const productoBase = productosEnOrigen.value.find(p => p.id === Number(form.value.productoPadreId));
+  
+  for (const llave in matrizCantidades.value) {
+    const cantidad = matrizCantidades.value[llave] || 0;
+    if (cantidad > 0) {
+      const [color, talla] = llave.split('|');
+      itemsParaCelular.push({
+        nombre: productoBase ? productoBase.nombre : 'Producto',
+        sku: productoBase ? productoBase.skuBase : '',
+        talla: talla,
+        color: color,
+        cantidad: cantidad
+      });
     }
-  });
+  }
+  emitirSincronizacion(itemsParaCelular);
 };
 
 // --- LÓGICA DE PROCESAMIENTO DE CÓDIGOS ---
@@ -142,6 +128,10 @@ const procesarCodigo = (codigoEscaneado: string) => {
     } else {
       matrizCantidades.value[llave] = cantidadActual + 1;
       ultimoEscaneado.value = `+1 ${itemEncontrado.producto.nombre} (${itemEncontrado.color} - ${itemEncontrado.talla})`;
+      
+      // Actualizamos el celular en tiempo real
+      sincronizarMatrizAlCelular();
+
       setTimeout(() => ultimoEscaneado.value = '', 3000);
     }
   }, 100);
@@ -325,6 +315,7 @@ const registrarTrasladoLote = async () => {
     
     alert(`✅ Operación Completada con éxito. Traslado de ${totalPrendasAMover.value} unidades procesado en lote.`);
     form.value.productoPadreId = ''; 
+    emitirSincronizacion([]); // Limpiamos la pantalla del móvil al finalizar
     await cargarDatos(); 
   } catch (error: any) {
     alert('❌ Error operativo: ' + (error.response?.data?.message || error.message || 'Fallo de comunicación'));
@@ -336,12 +327,10 @@ const registrarTrasladoLote = async () => {
 onMounted(() => {
   cargarDatos();
   window.addEventListener('keydown', manejarEscaneo);
-  inicializarConexionMovil();
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', manejarEscaneo);
-  if (socketPc) socketPc.disconnect();
 });
 </script>
 
@@ -388,37 +377,43 @@ onUnmounted(() => {
       </div>
 
       <div class="lg:col-span-8 bg-gray-900 rounded-[2rem] shadow-xl border border-gray-800 p-6 md:p-8 text-white flex flex-col min-h-[450px]">
-        <h3 class="text-lg font-black mb-4 flex items-center gap-2">
-          <span class="text-blue-400 font-mono text-sm">03.</span> Configuración de Carga por Lotes
-        </h3>
+        
+        <div class="flex justify-between items-start mb-4">
+           <h3 class="text-lg font-black flex items-center gap-2">
+             <span class="text-blue-400 font-mono text-sm">03.</span> Configuración de Carga por Lotes
+           </h3>
+           
+           <div v-if="ultimoEscaneado" class="text-emerald-400 font-black text-sm animate-pulse tracking-wide bg-black/30 px-3 py-1 rounded-lg">
+             {{ ultimoEscaneado }}
+           </div>
+        </div>
 
-        <div v-if="form.origenId" class="mb-6 bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-inner flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
-          <div class="flex-1 flex flex-col justify-center">
-            <h4 class="text-sm font-black text-white uppercase tracking-widest mb-1 flex items-center gap-2">
-              <span class="text-lg">📱</span> Escáner Móvil
-            </h4>
-            
-            <div v-if="scannerMovilConectado" class="mt-2 inline-flex items-center gap-2 text-emerald-400 bg-emerald-400/10 px-4 py-2 rounded-xl border border-emerald-400/20 w-fit">
-               <span class="relative flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>
-               <span class="text-xs font-bold uppercase tracking-wide">Vinculado y Listo</span>
-            </div>
-            <div v-else class="mt-2 inline-flex items-center gap-2 text-gray-400 bg-gray-700/50 px-4 py-2 rounded-xl border border-gray-600 w-fit">
-               <span class="w-3 h-3 bg-gray-500 rounded-full animate-pulse"></span>
-               <span class="text-xs font-bold uppercase tracking-wide">Esperando conexión...</span>
-            </div>
-            
-            <div v-if="ultimoEscaneado" class="mt-3 text-emerald-400 font-black text-sm animate-pulse tracking-wide bg-black/30 px-3 py-1 rounded-lg w-fit">
-              {{ ultimoEscaneado }}
-            </div>
-          </div>
+        <div v-if="form.origenId" class="mb-6 bg-gray-800 rounded-2xl border border-gray-700 flex flex-col overflow-hidden">
+          <button @click="mostrarVinculacion = !mostrarVinculacion" class="w-full p-4 flex justify-between items-center bg-gray-800 hover:bg-gray-700 transition-colors focus:outline-none">
+             <div class="flex items-center gap-3">
+               <div class="w-8 h-8 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center border border-blue-500/30">
+                 <span class="text-sm">📱</span>
+               </div>
+               <div class="text-left">
+                 <h3 class="font-black text-white text-[10px] uppercase tracking-widest">Escáner Remoto</h3>
+                 <p class="text-[9px] font-bold mt-0.5" :class="movilVinculado ? 'text-green-400' : 'text-gray-400'">{{ movilVinculado ? 'Conectado y Listo' : 'Toca para vincular cámara' }}</p>
+               </div>
+             </div>
+             <svg :class="{'rotate-180': mostrarVinculacion}" class="w-4 h-4 text-gray-400 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+          </button>
 
-          <div v-if="!scannerMovilConectado" class="flex items-center gap-4 bg-gray-900 p-3 rounded-xl border border-gray-700 shrink-0">
-            <div class="text-right">
-              <p class="text-[9px] text-gray-500 uppercase tracking-widest font-bold">PIN de acceso</p>
-              <p class="text-3xl font-black text-white font-mono tracking-[0.2em]">{{ pinConexion }}</p>
+          <div v-show="mostrarVinculacion" class="px-4 pb-4 border-t border-gray-700 animate-[fadeIn_0.2s_ease-out]">
+            <div v-if="!movilVinculado" class="mt-4 bg-gray-900 border-2 border-dashed border-gray-700 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-center gap-6">
+              <div class="bg-white p-2 rounded-xl border border-gray-100">
+                <qrcode-vue :value="urlVinculacion" :size="110" level="H" render-as="svg" />
+              </div>
+              <div class="text-center md:text-left">
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest font-bold">PIN de acceso</p>
+                <div class="text-3xl font-mono font-black text-white tracking-[0.2em] mt-1">
+                  {{ pinConexion }}
+                </div>
+              </div>
             </div>
-            <div class="h-12 w-px bg-gray-700 mx-2"></div>
-            <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="QR Scanner" class="w-20 h-20 rounded-lg shadow-lg" />
           </div>
         </div>
         
@@ -456,6 +451,7 @@ onUnmounted(() => {
                         <input 
                           type="number" 
                           v-model.number="matrizCantidades[`${color}|${talla}`]" 
+                          @change="sincronizarMatrizAlCelular"
                           min="0" 
                           :max="matrizStock[`${color}|${talla}`]"
                           class="w-16 bg-black border border-gray-700 text-center py-1.5 px-1 rounded-lg font-black text-sm text-white outline-none focus:border-blue-500 transition-all hide-arrows" 
