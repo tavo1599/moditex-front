@@ -107,7 +107,7 @@ const procesarCodigo = (codigoEscaneado: string) => {
     return alert('⚠️ Selecciona primero la Bodega de Origen para comenzar a escanear.');
   }
 
-  const codigoLimpio = codigoEscaneado.trim().toUpperCase();
+  const codigoLimpio = codigoEscaneado.trim().toUpperCase().replace(/'/g, '-');
 
   const itemEncontrado = inventarioConSKU.value.find(
     (inv: any) => inv.bodegaId === Number(form.value.origenId) && 

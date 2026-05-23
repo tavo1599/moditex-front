@@ -30,14 +30,16 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     return totalPagar.value - (Number(adelanto.value) || 0);
   });
 
-  const procesarEscaneo = () => {
+const procesarEscaneo = () => {
     if (!bodegaSeleccionada.value) {
       alert("Selecciona una bodega primero.");
       codigoEscaneado.value = '';
       return;
     }
 
-    const sku = codigoEscaneado.value.trim().toUpperCase();
+    // 🔥 AQUÍ ESTÁ LA MAGIA: Limpiamos el código apenas entra
+    const sku = codigoEscaneado.value.trim().toUpperCase().replace(/'/g, '-');
+    
     if (!sku) return;
 
     const prenda = inventarioConSKURef.value.find(
