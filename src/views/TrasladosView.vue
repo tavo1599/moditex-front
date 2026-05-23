@@ -85,21 +85,34 @@ const sincronizarMatrizAlCelular = () => {
 
 // --- LÓGICA DE PROCESAMIENTO DE CÓDIGOS ---
 const manejarEscaneo = (e: KeyboardEvent) => {
+  // 1. Ignorar si el usuario está escribiendo manualmente en algún input de la pantalla
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
     return;
   }
+
+  // 2. Si el escáner manda el "Enter" final, procesamos todo
   if (e.key === 'Enter') {
     if (bufferEscaner.value.length > 3) {
       procesarCodigo(bufferEscaner.value.trim());
     }
     bufferEscaner.value = '';
-  } else {
-    bufferEscaner.value += e.key;
-    if (timeoutEscaner) clearTimeout(timeoutEscaner);
-    timeoutEscaner = setTimeout(() => {
-      bufferEscaner.value = '';
-    }, 50);
+    return;
   }
+
+  // 🔥 3. EL FILTRO MÁGICO: Ignorar teclas de sistema (Shift, Control, Alt, CapsLock)
+  // Las teclas normales (letras, números, guiones) tienen longitud 1.
+  if (e.key.length > 1) {
+    return; 
+  }
+
+  // 4. Guardar la letra/número limpio en la memoria invisible
+  bufferEscaner.value += e.key;
+
+  // 5. Reiniciar el temporizador (Subimos a 100ms para darle un respiro a pistolas más lentas)
+  if (timeoutEscaner) clearTimeout(timeoutEscaner);
+  timeoutEscaner = setTimeout(() => {
+    bufferEscaner.value = '';
+  }, 100); 
 };
 
 const procesarCodigo = (codigoEscaneado: string) => {
