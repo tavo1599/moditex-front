@@ -9,6 +9,7 @@ const insumos = ref<any[]>([]);
 const productos = ref<any[]>([]);
 const cargando = ref(true);
 const guardando = ref(false);
+const bodegas = ref<any[]>([]);
 
 // --- CONTROL DE REGISTRO RÁPIDO DE PROVEEDOR ---
 const modalProveedorAbierto = ref(false);
@@ -53,7 +54,8 @@ const guardarProveedorRapido = async () => {
 // --- CARRITO Y CABECERA DE COMPRA ---
 const formCabecera = ref({
   proveedorId: '',
-  correlativo: ''
+  correlativo: '',
+  bodegaDestinoId: '' // <--- NUEVO CAMPO
 });
 
 const carritoDetalles = ref<any[]>([]);
@@ -148,8 +150,8 @@ const totalCompraGlobal = computed(() => {
 
 // --- GUARDAR COMPRA EN BACKEND ---
 const procesarCompra = async () => {
-  if (!formCabecera.value.proveedorId || !formCabecera.value.correlativo) {
-    return alert("⚠️ Seleccione un proveedor e ingrese el número de factura/recibo.");
+  if (!formCabecera.value.proveedorId || !formCabecera.value.correlativo || !formCabecera.value.bodegaDestinoId) {
+    return alert("⚠️ Seleccione un proveedor, el número de factura y la bodega de destino.");
   }
   if (carritoDetalles.value.length === 0) {
     return alert("⚠️ El carrito de compras está vacío.");
@@ -160,6 +162,7 @@ const procesarCompra = async () => {
     const payload = {
       proveedorId: formCabecera.value.proveedorId,
       correlativo: formCabecera.value.correlativo,
+      bodegaDestinoId: formCabecera.value.bodegaDestinoId,
       totalCompra: totalCompraGlobal.value,
       detalles: carritoDetalles.value
     };
@@ -184,14 +187,16 @@ onMounted(async () => {
   window.addEventListener('keydown', manejarEscaneo);
   try {
     // Asegúrese de que estas 3 rutas existan en su backend para llenar los combos
-    const [resProv, resIns, resProd] = await Promise.all([
+    const [resProv, resIns, resProd, resBodegas] = await Promise.all([
       api.get('/compras/proveedores'),
       api.get('/insumos'), 
-      api.get('/productos')
+      api.get('/productos'),
+      api.get('/almacen-terminados/bodegas')
     ]);
     proveedores.value = resProv.data;
     insumos.value = resIns.data;
     productos.value = resProd.data;
+    bodegas.value = resBodegas.data.filter((b: any) => b.estado);
   } catch (error) {
     console.error("Error cargando catálogos:", error);
   } finally {
@@ -236,9 +241,19 @@ onUnmounted(() => {
                   <option v-for="p in proveedores" :key="p.id" :value="p.id">{{ p.razonSocial }}</option>
                 </select>
               </div>
-              <div>
-                <label class="block text-xs font-bold text-slate-600 mb-1">N° de Factura / Guía</label>
-                <input v-model="formCabecera.correlativo" type="text" placeholder="Ej: F001-000456" class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none uppercase" />
+              
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-bold text-slate-600 mb-1">N° de Factura / Guía</label>
+                  <input v-model="formCabecera.correlativo" type="text" placeholder="Ej: F001-000456" class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none uppercase" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-600 mb-1">Bodega de Ingreso</label>
+                  <select v-model="formCabecera.bodegaDestinoId" class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none">
+                    <option value="" disabled>¿A dónde ingresa?</option>
+                    <option v-for="b in bodegas" :key="b.id" :value="b.id">{{ b.nombre }}</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
