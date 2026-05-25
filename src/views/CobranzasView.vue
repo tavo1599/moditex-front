@@ -46,6 +46,7 @@ const nuevoClienteForm = ref({
 const procesandoNuevoCliente = ref(false);
 
 // 🔥 LA MAGIA DE AUTOMATIZACIÓN: Registra y autoselecciona
+// 🔥 LA MAGIA DE AUTOMATIZACIÓN: Registra y autoselecciona
 const guardarClienteRapido = async () => {
   if (!nuevoClienteForm.value.nombre.trim()) {
     return alert("El nombre del cliente es obligatorio.");
@@ -53,19 +54,23 @@ const guardarClienteRapido = async () => {
 
   procesandoNuevoCliente.value = true;
   try {
-    // Llamamos a su API existente de creación de clientes
-    const res = await api.post('/clientes', nuevoClienteForm.value);
+    // 1. Armamos el paquete inyectando el dato que exige Prisma de forma invisible
+    const payloadCliente = {
+      ...nuevoClienteForm.value,
+      limiteCredito: 0 // <--- AQUÍ ESTÁ LA CURA PARA EL ERROR 500
+    };
+
+    // 2. Enviamos el paquete completo
+    const res = await api.post('/clientes', payloadCliente);
     const clienteCreado = res.data;
 
     alert(`✅ Cliente "${clienteCreado.nombre}" registrado con éxito.`);
     
-    // 1. Recargamos la lista completa de clientes para que el sistema la reconozca
+    // 3. Recargamos la lista completa y autoseleccionamos
     await cargarClientesFiltro();
-    
-    // 2. ¡Autoselección instantánea! Asignamos el ID recién creado al formulario de la deuda
     formularioDeuda.value.clienteId = clienteCreado.id;
     
-    // 3. Limpiamos y cerramos este modal secundario
+    // 4. Limpiamos y cerramos
     nuevoClienteForm.value = { nombre: '', documento: '', celular: '' };
     modalClienteAbierto.value = false;
 
