@@ -16,6 +16,7 @@ const menuItems = [
   { name: 'Talleres', path: '/talleres', icon: '🧵' },
   { name: 'Productos', path: '/productos', icon: '👕' },
   { name: 'Control de Ordenes', path: '/control-ordenes', icon: '📋' },
+  { name: 'Compras', path: '/compras', icon: '🛒' },
   { name: 'Liquidaciones', path: '/liquidaciones', icon: '💰' },
   { name: 'Almacen de terminados', path: '/almacen-terminados', icon: '🏬' },
   { name: 'Traslados', path: '/traslados', icon: '🔄' },
