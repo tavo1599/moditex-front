@@ -33,6 +33,49 @@ const listaClientes = ref<any[]>([]); // Almacenará todos los clientes del sist
 const cargandoClientes = ref(false);
 const procesandoDeudaManual = ref(false);
 
+// --- CONTROL DEL MODAL DE REGISTRO DE CLIENTE ---
+const modalClienteAbierto = ref(false); // Controla el modal de registro rápido
+
+// Estado para el formulario del nuevo cliente (en caso de que lo haga directo aquí)
+const nuevoClienteForm = ref({
+  nombre: '',
+  documento: '',
+  celular: ''
+});
+
+const procesandoNuevoCliente = ref(false);
+
+// 🔥 LA MAGIA DE AUTOMATIZACIÓN: Registra y autoselecciona
+const guardarClienteRapido = async () => {
+  if (!nuevoClienteForm.value.nombre.trim()) {
+    return alert("El nombre del cliente es obligatorio.");
+  }
+
+  procesandoNuevoCliente.value = true;
+  try {
+    // Llamamos a su API existente de creación de clientes
+    const res = await api.post('/clientes', nuevoClienteForm.value);
+    const clienteCreado = res.data;
+
+    alert(`✅ Cliente "${clienteCreado.nombre}" registrado con éxito.`);
+    
+    // 1. Recargamos la lista completa de clientes para que el sistema la reconozca
+    await cargarClientesFiltro();
+    
+    // 2. ¡Autoselección instantánea! Asignamos el ID recién creado al formulario de la deuda
+    formularioDeuda.value.clienteId = clienteCreado.id;
+    
+    // 3. Limpiamos y cerramos este modal secundario
+    nuevoClienteForm.value = { nombre: '', documento: '', celular: '' };
+    modalClienteAbierto.value = false;
+
+  } catch (error: any) {
+    alert("Error al registrar cliente: " + (error.response?.data?.message || "Fallo operativo"));
+  } finally {
+    procesandoNuevoCliente.value = false;
+  }
+};
+
 const formularioDeuda = ref({
   clienteId: '',
   monto: 0,
@@ -185,12 +228,13 @@ onMounted(() => {
         </div>
         <div class="bg-red-50 px-8 py-4 rounded-2xl border border-red-100 text-center md:text-right w-full md:w-auto">
           <p class="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Total en la Calle</p>
-          <button @click="abrirModalNuevaDeuda" 
+          
+          <p class="text-4xl font-black text-red-600">S/ {{ totalDeudaGeneral.toFixed(2) }}</p>
+        </div>
+        <button @click="abrirModalNuevaDeuda" 
         class="bg-slate-900 text-white font-black px-6 py-4 rounded-2xl hover:bg-slate-800 transition-all flex items-center gap-2 text-sm w-full md:w-auto justify-center shadow-lg active:scale-95">
   <span>➕</span> REGISTRAR DEUDA MANUAL
 </button>
-          <p class="text-4xl font-black text-red-600">S/ {{ totalDeudaGeneral.toFixed(2) }}</p>
-        </div>
       </header>
 
       <div v-if="cargando" class="flex justify-center py-20">
@@ -398,11 +442,21 @@ onMounted(() => {
 
     <div class="p-6 space-y-4">
       <div>
-        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Seleccionar Cliente</label>
+        <div class="flex justify-between items-center mb-2">
+          <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Seleccionar Cliente</label>
+          
+          <button @click="modalClienteAbierto = true" type="button"
+                  class="text-[10px] font-black text-blue-600 hover:text-blue-500 uppercase tracking-wide flex items-center gap-1 focus:outline-none">
+            <span>➕</span> ¿Cliente Nuevo? Regístralo aquí
+          </button>
+        </div>
+
         <select v-model="formularioDeuda.clienteId" :disabled="cargandoClientes"
                 class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl font-bold text-slate-700 outline-none focus:border-slate-900 cursor-pointer text-sm">
           <option value="" disabled>{{ cargandoClientes ? 'Cargando cartera...' : 'Seleccione un cliente...' }}</option>
-          <option v-for="c in listaClientes" :key="c.id" :value="c.id">{{ c.nombre }} {{ c.documento ? `(${c.documento})` : '' }}</option>
+          <option v-for="c in listaClientes" :key="c.id" :value="c.id">
+            {{ c.nombre }} {{ c.documento ? `(${c.documento})` : '' }}
+          </option>
         </select>
       </div>
 
@@ -424,6 +478,45 @@ onMounted(() => {
               class="w-full bg-slate-900 disabled:bg-slate-300 text-white font-black py-4 rounded-xl hover:bg-slate-800 transition-colors flex justify-center items-center gap-2">
         <span v-if="procesandoDeudaManual" class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
         <span v-else>💾 ASIGNAR DEUDA A CUENTA</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div v-if="modalClienteAbierto" class="fixed inset-0 z-[70] flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" @click="modalClienteAbierto = false"></div>
+  
+  <div class="relative w-full max-w-sm bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col animate-[zoomIn_0.15s_ease-out] border border-slate-100">
+    <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+      <h4 class="text-base font-black text-slate-800 flex items-center gap-2"><span>👤</span> Nuevo Cliente Rápido</h4>
+      <button @click="modalClienteAbierto = false" class="text-slate-400 hover:text-red-500 font-bold text-sm bg-white w-6 h-6 rounded-full shadow-sm">✕</button>
+    </div>
+
+    <div class="p-5 space-y-4">
+      <div>
+        <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Nombre Completo / Razón Social</label>
+        <input v-model="nuevoClienteForm.nombre" type="text" placeholder="Ej: Juan Pérez o Textil Sac"
+               class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-800 text-sm outline-none focus:border-blue-500" />
+      </div>
+
+      <div>
+        <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Documento (DNI / RUC - Opcional)</label>
+        <input v-model="nuevoClienteForm.documento" type="text" placeholder="Ej: 721456... o 2060..."
+               class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-800 text-sm outline-none focus:border-blue-500" />
+      </div>
+
+      <div>
+        <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Celular de Contacto (Opcional)</label>
+        <input v-model="nuevoClienteForm.celular" type="text" placeholder="Ej: 987654321"
+               class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-800 text-sm outline-none focus:border-blue-500" />
+      </div>
+    </div>
+
+    <div class="p-5 border-t border-slate-100 bg-white">
+      <button @click="guardarClienteRapido" :disabled="procesandoNuevoCliente" 
+              class="w-full bg-blue-600 disabled:bg-slate-300 text-white font-black py-3 rounded-xl hover:bg-blue-500 transition-colors flex justify-center items-center gap-2 text-sm">
+        <span v-if="procesandoNuevoCliente" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+        <span v-else>💾 GUARDAR Y SELECCIONAR</span>
       </button>
     </div>
   </div>
