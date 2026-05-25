@@ -295,6 +295,36 @@ const generarGuiaTraslado = async (origen: any, destino: any, detallesCompletos:
   doc.save(`Guia_Traslado_${correlativo}.pdf`);
 };
 
+// --- FUNCIÓN PARA MOVER TODO EL STOCK DE GOLPE ---
+const seleccionarTodoElStock = () => {
+  if (!form.value.productoPadreId) return;
+
+  const prodId = form.value.productoPadreId;
+  let prendasAgregadas = 0;
+
+  // Recorremos los colores y tallas que están en la vista actual
+  coloresDisponibles.value.forEach(color => {
+    tallasDisponibles.value.forEach(talla => {
+      const llaveVista = `${color}|${talla}`;
+      const llaveGlobal = `${prodId}|${color}|${talla}`;
+
+      const stockDisponible = matrizStock.value[llaveVista] || 0;
+
+      // Si hay stock, lo pasamos completo a la caja de traslado
+      if (stockDisponible > 0) {
+        matrizCantidades.value[llaveGlobal] = stockDisponible;
+        prendasAgregadas += stockDisponible;
+      }
+    });
+  });
+
+  if (prendasAgregadas > 0) {
+    sincronizarMatrizAlCelular();
+    ultimoEscaneado.value = `⚡ ¡Se seleccionaron ${prendasAgregadas} prendas al máximo!`;
+    setTimeout(() => ultimoEscaneado.value = '', 3000);
+  }
+};
+
 // --- PROCESAR OPERACIÓN AL BACKEND ---
 const registrarTrasladoLote = async () => {
   if (totalPrendasAMover.value <= 0) return alert('⚠️ Por favor, ingresa al menos una cantidad.');
@@ -473,6 +503,14 @@ onUnmounted(() => {
           </select>
 
           <div v-if="form.productoPadreId && coloresDisponibles.length > 0" class="bg-gray-800/40 rounded-2xl border border-gray-700 p-4 overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+            <div class="flex justify-between items-center mb-4 border-b border-gray-700/50 pb-3">
+              <span class="text-[10px] text-gray-400 font-black uppercase tracking-widest">Matriz de Distribución</span>
+              
+              <button @click="seleccionarTodoElStock" 
+                      class="bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-1.5 border border-blue-500/20 active:scale-95">
+                <span>⚡</span> VACIAR STOCK COMPLETO
+              </button>
+            </div>
             <div class="overflow-x-auto">
               <table class="w-full text-center border-collapse">
                 <thead>
