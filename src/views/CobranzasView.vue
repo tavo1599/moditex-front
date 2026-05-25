@@ -28,6 +28,64 @@ const cargando = ref(true);
 const modalAbierto = ref(false);
 const procesandoPago = ref(false);
 
+const modalNuevaDeuda = ref(false);
+const listaClientes = ref<any[]>([]); // Almacenará todos los clientes del sistema
+const cargandoClientes = ref(false);
+const procesandoDeudaManual = ref(false);
+
+const formularioDeuda = ref({
+  clienteId: '',
+  monto: 0,
+  concepto: ''
+});
+
+// Función para cargar todos los clientes existentes en el sistema
+const cargarClientesFiltro = async () => {
+  cargandoClientes.value = true;
+  try {
+    const res = await api.get('/clientes'); // Reutilizamos tu endpoint existente
+    listaClientes.value = res.data;
+  } catch (error) {
+    console.error("Error al cargar clientes:", error);
+  } finally {
+    cargandoClientes.value = false;
+  }
+};
+
+// Abre el modal y gatilla la carga de clientes
+const abrirModalNuevaDeuda = async () => {
+  formularioDeuda.value = { clienteId: '', monto: 0, concepto: '' };
+  modalNuevaDeuda.value = true;
+  await cargarClientesFiltro();
+};
+
+// Envía la deuda manual al backend
+const guardarDeudaManual = async () => {
+  if (!formularioDeuda.value.clienteId || formularioDeuda.value.monto <= 0) {
+    return alert("Por favor, seleccione un cliente y asigne un monto válido mayor a cero.");
+  }
+
+  procesandoDeudaManual.value = true;
+  try {
+    const payload = {
+      clienteId: Number(formularioDeuda.value.clienteId),
+      monto: Number(formularioDeuda.value.monto),
+      concepto: formularioDeuda.value.concepto.trim() || 'Carga manual de saldo'
+    };
+
+    await api.post('/cobranzas/manual', payload);
+    
+    alert("✅ Deuda registrada y cargada a la cuenta del cliente con éxito.");
+    modalNuevaDeuda.value = false;
+    await cargarDeudores(); // Recarga tu cuadrícula principal para que aparezca el saldo actualizado
+
+  } catch (error: any) {
+    alert("Error al registrar deuda: " + (error.response?.data?.message || "Fallo operativo"));
+  } finally {
+    procesandoDeudaManual.value = false;
+  }
+};
+
 const clienteSeleccionado = ref<ClienteDeudor | null>(null);
 const pago = ref({
   monto: 0,
@@ -127,6 +185,10 @@ onMounted(() => {
         </div>
         <div class="bg-red-50 px-8 py-4 rounded-2xl border border-red-100 text-center md:text-right w-full md:w-auto">
           <p class="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">Total en la Calle</p>
+          <button @click="abrirModalNuevaDeuda" 
+        class="bg-slate-900 text-white font-black px-6 py-4 rounded-2xl hover:bg-slate-800 transition-all flex items-center gap-2 text-sm w-full md:w-auto justify-center shadow-lg active:scale-95">
+  <span>➕</span> REGISTRAR DEUDA MANUAL
+</button>
           <p class="text-4xl font-black text-red-600">S/ {{ totalDeudaGeneral.toFixed(2) }}</p>
         </div>
       </header>
@@ -324,6 +386,48 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <div v-if="modalNuevaDeuda" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="modalNuevaDeuda = false"></div>
+  
+  <div class="relative w-full max-w-md bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col animate-[zoomIn_0.2s_ease-out]">
+    <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+      <h3 class="text-lg font-black text-slate-800 flex items-center gap-2"><span>📝</span> Registrar Deuda Manual</h3>
+      <button @click="modalNuevaDeuda = false" class="text-slate-400 hover:text-red-500 font-bold text-xl">✕</button>
+    </div>
+
+    <div class="p-6 space-y-4">
+      <div>
+        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Seleccionar Cliente</label>
+        <select v-model="formularioDeuda.clienteId" :disabled="cargandoClientes"
+                class="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl font-bold text-slate-700 outline-none focus:border-slate-900 cursor-pointer text-sm">
+          <option value="" disabled>{{ cargandoClientes ? 'Cargando cartera...' : 'Seleccione un cliente...' }}</option>
+          <option v-for="c in listaClientes" :key="c.id" :value="c.id">{{ c.nombre }} {{ c.documento ? `(${c.documento})` : '' }}</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Monto de la Deuda (S/)</label>
+        <input v-model.number="formularioDeuda.monto" type="number" step="0.10" placeholder="0.00"
+               class="w-full bg-white border-2 border-slate-200 p-3 rounded-xl text-xl font-black text-slate-800 outline-none focus:border-slate-900 text-center" />
+      </div>
+
+      <div>
+        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Concepto / Referencia (Opcional)</label>
+        <textarea v-model="formularioDeuda.concepto" rows="2" placeholder="Ej: Saldo antiguo de campaña anterior, ajuste por mercadería..."
+                  class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none focus:border-slate-900 text-xs placeholder:text-slate-300 resize-none"></textarea>
+      </div>
+    </div>
+
+    <div class="p-6 border-t border-slate-100 bg-white">
+      <button @click="guardarDeudaManual" :disabled="procesandoDeudaManual" 
+              class="w-full bg-slate-900 disabled:bg-slate-300 text-white font-black py-4 rounded-xl hover:bg-slate-800 transition-colors flex justify-center items-center gap-2">
+        <span v-if="procesandoDeudaManual" class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+        <span v-else>💾 ASIGNAR DEUDA A CUENTA</span>
+      </button>
+    </div>
+  </div>
+</div>
 </template>
 
 <style>
