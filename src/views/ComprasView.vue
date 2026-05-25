@@ -10,6 +10,46 @@ const productos = ref<any[]>([]);
 const cargando = ref(true);
 const guardando = ref(false);
 
+// --- CONTROL DE REGISTRO RÁPIDO DE PROVEEDOR ---
+const modalProveedorAbierto = ref(false);
+const guardandoProveedor = ref(false);
+const nuevoProveedorForm = ref({
+  razonSocial: '',
+  ruc: '',
+  telefono: '',
+  tipo: 'GENERAL'
+});
+
+const guardarProveedorRapido = async () => {
+  if (!nuevoProveedorForm.value.razonSocial.trim()) {
+    return alert("La Razón Social o Nombre del proveedor es obligatorio.");
+  }
+
+  guardandoProveedor.value = true;
+  try {
+    const res = await api.post('/compras/proveedores', nuevoProveedorForm.value);
+    const proveedorCreado = res.data;
+
+    alert(`✅ Proveedor "${proveedorCreado.razonSocial}" registrado.`);
+    
+    // 1. Recargamos el selector de proveedores
+    const resProv = await api.get('/compras/proveedores');
+    proveedores.value = resProv.data;
+    
+    // 2. Lo autoseleccionamos de inmediato
+    formCabecera.value.proveedorId = proveedorCreado.id;
+    
+    // 3. Limpiamos y cerramos
+    nuevoProveedorForm.value = { razonSocial: '', ruc: '', telefono: '', tipo: 'GENERAL' };
+    modalProveedorAbierto.value = false;
+
+  } catch (error: any) {
+    alert("Error al crear proveedor: " + (error.response?.data?.message || error.message));
+  } finally {
+    guardandoProveedor.value = false;
+  }
+};
+
 // --- CARRITO Y CABECERA DE COMPRA ---
 const formCabecera = ref({
   proveedorId: '',
@@ -185,7 +225,12 @@ onUnmounted(() => {
             <h2 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">1. Cabecera de Factura</h2>
             <div class="space-y-4">
               <div>
-                <label class="block text-xs font-bold text-slate-600 mb-1">Proveedor</label>
+                <div class="flex justify-between items-center mb-1">
+                  <label class="block text-xs font-bold text-slate-600">Proveedor</label>
+                  <button @click="modalProveedorAbierto = true" type="button" class="text-[10px] font-black text-blue-600 hover:text-blue-500 uppercase tracking-wide focus:outline-none">
+                    ➕ ¿Nuevo Proveedor?
+                  </button>
+                </div>
                 <select v-model="formCabecera.proveedorId" class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none">
                   <option value="" disabled>Seleccione proveedor...</option>
                   <option v-for="p in proveedores" :key="p.id" :value="p.id">{{ p.razonSocial }}</option>
@@ -327,6 +372,54 @@ onUnmounted(() => {
       </div>
     </div>
   </div>
+
+  <div v-if="modalProveedorAbierto" class="fixed inset-0 z-[70] flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" @click="modalProveedorAbierto = false"></div>
+  
+  <div class="relative w-full max-w-sm bg-white rounded-[2rem] shadow-2xl overflow-hidden flex flex-col animate-[zoomIn_0.15s_ease-out] border border-slate-100">
+    <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+      <h4 class="text-base font-black text-slate-800 flex items-center gap-2"><span>🏢</span> Nuevo Proveedor</h4>
+      <button @click="modalProveedorAbierto = false" class="text-slate-400 hover:text-red-500 font-bold text-sm bg-white w-6 h-6 rounded-full shadow-sm">✕</button>
+    </div>
+
+    <div class="p-5 space-y-4">
+      <div>
+        <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Razón Social / Nombre Comercial</label>
+        <input v-model="nuevoProveedorForm.razonSocial" type="text" placeholder="Ej: Corporación Textil S.A.C."
+               class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-800 text-sm outline-none focus:border-blue-500" />
+      </div>
+
+      <div>
+        <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">RUC (Opcional)</label>
+        <input v-model="nuevoProveedorForm.ruc" type="text" placeholder="Ej: 20601234567"
+               class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-800 text-sm outline-none focus:border-blue-500" />
+      </div>
+
+      <div>
+        <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Teléfono (Opcional)</label>
+        <input v-model="nuevoProveedorForm.telefono" type="text" placeholder="Ej: 987654321"
+               class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-800 text-sm outline-none focus:border-blue-500" />
+      </div>
+
+      <div>
+        <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Especialidad</label>
+        <select v-model="nuevoProveedorForm.tipo" class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none text-sm">
+          <option value="GENERAL">General / Ambos</option>
+          <option value="INSUMOS">Solo Insumos (Avíos/Telas)</option>
+          <option value="MERCADERIA">Solo Mercadería Terminada</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="p-5 border-t border-slate-100 bg-white">
+      <button @click="guardarProveedorRapido" :disabled="guardandoProveedor" 
+              class="w-full bg-blue-600 disabled:bg-slate-300 text-white font-black py-3 rounded-xl hover:bg-blue-500 transition-colors flex justify-center items-center gap-2 text-sm">
+        <span v-if="guardandoProveedor" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+        <span v-else>💾 GUARDAR PROVEEDOR</span>
+      </button>
+    </div>
+  </div>
+</div>
 </template>
 
 <style scoped>
