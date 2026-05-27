@@ -7,6 +7,7 @@ const tabActual = ref<'INSUMO' | 'PRENDA'>('INSUMO');
 const proveedores = ref<any[]>([]);
 const insumos = ref<any[]>([]);
 const productos = ref<any[]>([]);
+const colores = ref<any[]>([]);
 const cargando = ref(true);
 const guardando = ref(false);
 const bodegas = ref<any[]>([]);
@@ -187,16 +188,18 @@ onMounted(async () => {
   window.addEventListener('keydown', manejarEscaneo);
   try {
     // Asegúrese de que estas 3 rutas existan en su backend para llenar los combos
-    const [resProv, resIns, resProd, resBodegas] = await Promise.all([
+    const [resProv, resIns, resProd, resBodegas, resColores] = await Promise.all([
       api.get('/compras/proveedores'),
       api.get('/insumos'), 
       api.get('/productos'),
-      api.get('/almacen-terminados/bodegas')
+      api.get('/almacen-terminados/bodegas'),
+      api.get('/colores')
     ]);
     proveedores.value = resProv.data;
     insumos.value = resIns.data;
     productos.value = resProd.data;
     bodegas.value = resBodegas.data.filter((b: any) => b.estado);
+    colores.value = resColores.data;
   } catch (error) {
     console.error("Error cargando catálogos:", error);
   } finally {
@@ -307,9 +310,14 @@ onUnmounted(() => {
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                   <div>
-                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Color</label>
-                    <input v-model="formPrenda.color" type="text" placeholder="Ej: Negro" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl font-bold text-white outline-none text-center" />
-                  </div>
+  <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Color</label>
+  <select v-model="formPrenda.color" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl font-bold text-white outline-none text-sm cursor-pointer">
+    <option value="" disabled>Seleccione color...</option>
+    <option v-for="c in colores" :key="c.id" :value="c.nombre">
+      {{ c.nombre }}
+    </option>
+  </select>
+</div>
                   <div>
                     <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Talla</label>
                     <input v-model="formPrenda.talla" type="text" placeholder="Ej: M" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl font-bold text-white outline-none text-center uppercase" />
