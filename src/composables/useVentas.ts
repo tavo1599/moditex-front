@@ -30,51 +30,88 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     return totalPagar.value - (Number(adelanto.value) || 0);
   });
 
-const procesarEscaneo = () => {
+  // 🔥 CONVERTIMOS A ASYNC PARA PODER CONECTARSE CON EL BACKEND EN TIEMPO REAL
+  const procesarEscaneo = async () => {
     if (!bodegaSeleccionada.value) {
       alert("Selecciona una bodega primero.");
       codigoEscaneado.value = '';
       return;
     }
 
-    // 🔥 AQUÍ ESTÁ LA MAGIA: Limpiamos el código apenas entra
     const sku = codigoEscaneado.value.trim().toUpperCase().replace(/'/g, '-');
-    
     if (!sku) return;
 
-    const prenda = inventarioConSKURef.value.find(
-      (i: any) => i.skuCalculado === sku && Number(i.bodegaId) === Number(bodegaSeleccionada.value)
-    );
+    // Variables de molde para capturar la prenda venga de donde venga
+    let productoId: number;
+    let nombre: string;
+    let color: string;
+    let talla: string;
+    let stockMaximo: number;
 
-    if (!prenda || prenda.stock <= 0) {
-      alert(`El producto ${sku} no se encontró o no tiene stock en esta bodega.`);
-      codigoEscaneado.value = '';
-      return;
+    try {
+      // 🚀 PLAN A: Intentamos buscar el código QR del proveedor en el endpoint de NestJS
+      const res = await api.get(`/ventas/escanear/${sku}`);
+      const dataBackend = res.data;
+
+      productoId = Number(dataBackend.productoId);
+      nombre = dataBackend.nombre;
+      color = dataBackend.color;
+      talla = dataBackend.talla;
+      stockMaximo = Number(dataBackend.stockDisponible);
+
+    } catch (error) {
+      // 🔄 PLAN B (Fallback): Si el backend no encuentra el QR, buscamos por el SKU calculado local
+      const prendaLocal = inventarioConSKURef.value.find(
+        (i: any) => i.skuCalculado === sku && Number(i.bodegaId) === Number(bodegaSeleccionada.value)
+      );
+
+      if (!prendaLocal || prendaLocal.stock <= 0) {
+        alert(`El producto escaneado o escrito (${sku}) no existe o no cuenta con stock físico disponible.`);
+        codigoEscaneado.value = '';
+        return;
+      }
+
+      productoId = Number(prendaLocal.productoId || prendaLocal.producto?.id);
+      nombre = prendaLocal.producto?.nombre || 'Producto Genérico';
+      color = prendaLocal.color;
+      talla = prendaLocal.talla;
+      stockMaximo = Number(prendaLocal.stock);
     }
 
-    const itemEnCarrito = carrito.value.find(c => c.sku === sku);
+    // 🎯 VALIDACIÓN INTELIGENTE: Buscamos en el carrito por variante real (ID + Color + Talla)
+    // Esto evita duplicar filas si escanean el QR de fábrica o ingresan el código manual
+    const itemEnCarrito = carrito.value.find(
+      c => c.productoId === productoId && c.color === color && c.talla === talla
+    );
 
     if (itemEnCarrito) {
-      if (itemEnCarrito.cantidad + 1 > prenda.stock) {
-        alert("No hay más stock disponible en almacén para esta variante.");
+      if (itemEnCarrito.cantidad + 1 > stockMaximo) {
+        alert("Atención: No puedes superar el stock máximo disponible en el almacén.");
       } else {
         itemEnCarrito.cantidad++;
       }
     } else {
+      // Buscamos el precio base configurado de forma local para no perder la reactividad
+      const referenciaPrenda = inventarioConSKURef.value.find(
+        (i: any) => Number(i.productoId || i.producto?.id) === productoId
+      );
+      const precioVentaBase = referenciaPrenda?.producto?.precioVenta || 0;
+
       carrito.value.unshift({
-        sku: sku,
-        productoId: prenda.productoId || prenda.producto?.id,
-        nombre: prenda.producto?.nombre || 'Producto Genérico',
-        color: prenda.color,
-        talla: prenda.talla,
+        sku: sku, // Guardamos el código exacto que disparó el láser
+        productoId: productoId,
+        nombre: nombre,
+        color: color,
+        talla: talla,
         cantidad: 1,
-        stockMaximo: prenda.stock,
-        precioUnitario: prenda.producto?.precioVenta || 0 
+        stockMaximo: stockMaximo,
+        precioUnitario: precioVentaBase 
       });
     }
     
     codigoEscaneado.value = '';
     
+    // Alerta auditiva de confirmación
     const beep = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
     beep.volume = 0.3;
     beep.play().catch(() => {});
