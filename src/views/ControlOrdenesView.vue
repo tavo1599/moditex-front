@@ -236,7 +236,7 @@ onMounted(() => {
         <button @click="cargarOrdenes" class="w-full sm:w-auto bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-lg font-bold transition-all flex items-center justify-center gap-2">
           <span>🔄</span> Tablero
         </button>
-        <router-link to="/produccion/nueva-orden" class="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-lg font-bold shadow-md shadow-red-500/30 transition-all flex items-center justify-center gap-2">
+        <router-link to="/produccion" class="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-lg font-bold shadow-md shadow-red-500/30 transition-all flex items-center justify-center gap-2">
           <span>✂️</span> Nueva OP
         </router-link>
       </div>
