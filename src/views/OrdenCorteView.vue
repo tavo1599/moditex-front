@@ -1,21 +1,22 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
+import { useRouter } from 'vue-router'; // 🔥 Para redireccionar al tablero después de guardar
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-// import api from '../api/axios'; // Descomenta esto cuando conectemos el backend
+import api from '../api/axios'; // 🔥 Descomentado para conexión real
 
-// Simulación de productos que vienen de tu BD
-const productos = ref([
-  { id: 1, skuBase: 'JEAN-SLIM-001', nombre: 'Pantalón Jean Slim Fit' },
-  { id: 2, skuBase: 'POL-BAS-002', nombre: 'Polera Básica Algodón' },
-]);
+const router = useRouter();
+
+// 🔥 AHORA SON ARREGLOS VACÍOS QUE SE LLENARÁN DESDE LA BASE DE DATOS
+const productos = ref<any[]>([]);
+const colores = ref<any[]>([]); 
+const guardando = ref(false);
 
 const form = ref({
   productoId: '',
   fechaInicio: new Date().toISOString().split('T')[0],
 });
 
-// La Matriz de Corte (Lo que se va a cortar)
 const detallesMatriz = ref([
   { color: '', talla: '', cantidad: 10 }
 ]);
@@ -34,21 +35,86 @@ const totalPrendas = computed(() => {
   return detallesMatriz.value.reduce((acc, item) => acc + (item.cantidad || 0), 0);
 });
 
-// GENERADOR DEL DOCUMENTO DE CORTE (PDF)
-const generarOrdenCortePDF = () => {
+// 🔥 NUEVO: CARGAMOS DATOS REALES DE SU SISTEMA AL ENTRAR A LA PANTALLA
+const cargarDatosBase = async () => {
+  try {
+    const [resProductos, resColores] = await Promise.all([
+      api.get('/productos'),
+      api.get('/colores')
+    ]);
+    productos.value = resProductos.data;
+    colores.value = resColores.data;
+  } catch (error) {
+    console.error("Error al cargar catálogos:", error);
+    alert("Hubo un error al cargar los productos o colores.");
+  }
+};
+
+// 🔥 NUEVO: FUNCIÓN MAESTRA QUE GUARDA EN BD Y LUEGO IMPRIME
+// 🔥 NUEVO: FUNCIÓN MAESTRA QUE GUARDA EN BD Y LUEGO IMPRIME
+const procesarOrdenProduccion = async () => {
   if (!form.value.productoId || detallesMatriz.value.length === 0) {
-    return alert('Faltan datos para generar la Orden de Corte.');
+    return alert('Faltan datos para generar la Orden de Producción.');
   }
 
-  const productoSelect = productos.value.find(p => p.id === Number(form.value.productoId));
-  const codigoOP = `OP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+  // Validar que no haya filas vacías
+  const filasValidas = detallesMatriz.value.every(d => d.color && d.talla && d.cantidad > 0);
+  if (!filasValidas) {
+    return alert('Asegúrese de seleccionar color, talla y cantidad en todas las filas.');
+  }
 
+  guardando.value = true;
+  const codigoOPGenerado = `OP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  try {
+    // 1. TRANSFORMAMOS LA MATRIZ DE VUE AL FORMATO OBJETO QUE ESPERA SU NESTJS
+    // El backend espera: {"ROJO-S": 10, "AZUL-M": 5}
+    const matrizParaBackend: Record<string, number> = {};
+    detallesMatriz.value.forEach(d => {
+      const clave = `${d.color}-${d.talla}`;
+      // Si el operario agregó dos filas iguales (ej: Rojo S 10 y Rojo S 5), las sumamos
+      matrizParaBackend[clave] = (matrizParaBackend[clave] || 0) + Number(d.cantidad); 
+    });
+
+    // 2. ARMAMOS EL PAQUETE EXACTO PARA EL BACKEND (NestJS)
+    const payload = {
+      codigoOp: codigoOPGenerado,
+      productoId: Number(form.value.productoId),
+      fechaInicio: new Date(String(form.value.fechaInicio)).toISOString(),
+      estado: 'En Proceso',
+      // Enviamos la matriz transformada
+      matriz: matrizParaBackend, 
+      // Enviamos servicios y CIF como arreglos vacíos para que el .map() de NestJS no explote
+      servicios: [], 
+      cif: []        
+    };
+
+    // 3. LO ENVIAMOS A LA BASE DE DATOS
+    await api.post('/ordenes', payload);
+
+    // 4. SI EL GUARDADO FUE ÉXITOSO, GENERAMOS EL PDF
+    generarOrdenCortePDF(codigoOPGenerado);
+
+    alert('✅ Orden de Producción creada correctamente y enviada a Planta.');
+    
+    // 5. LO REDIRIGIMOS AUTOMÁTICAMENTE AL TABLERO
+    router.push('/produccion/ordenes');
+
+  } catch (error: any) {
+    alert("❌ Error al guardar la OP: " + (error.response?.data?.message || error.message));
+  } finally {
+    guardando.value = false;
+  }
+};
+
+// GENERADOR DEL DOCUMENTO DE CORTE (PDF) AHORA RECIBE EL CÓDIGO OP POR PARÁMETRO
+const generarOrdenCortePDF = (codigoOP: string) => {
+  const productoSelect = productos.value.find(p => p.id === Number(form.value.productoId));
   const doc = new jsPDF();
 
   // Encabezado Industrial
-  doc.setFillColor(220, 38, 38); // Rojo oscuro (Alerta de Producción)
+  doc.setFillColor(220, 38, 38); 
   doc.rect(0, 0, 210, 35, 'F');
-  
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
@@ -63,7 +129,7 @@ const generarOrdenCortePDF = () => {
   doc.setFont("helvetica", "normal");
   doc.text(`CÓDIGO OP: ${codigoOP}`, 15, 60);
   doc.text(`Fecha Programada: ${form.value.fechaInicio}`, 15, 67);
-  doc.text(`Producto: ${productoSelect?.skuBase} - ${productoSelect?.nombre}`, 15, 74);
+  doc.text(`Producto: ${productoSelect?.skuBase || ''} - ${productoSelect?.nombre || ''}`, 15, 74);
   doc.text(`Total a Cortar: ${totalPrendas.value} prendas`, 15, 81);
 
   // Tabla Matriz de Corte
@@ -71,7 +137,7 @@ const generarOrdenCortePDF = () => {
     d.color.toUpperCase(), 
     d.talla.toUpperCase(), 
     `${d.cantidad} und`,
-    '' // Espacio en blanco para que el cortador anote lo real
+    '' 
   ]);
 
   autoTable(doc, {
@@ -80,12 +146,9 @@ const generarOrdenCortePDF = () => {
     body: bodyTabla,
     theme: 'grid',
     headStyles: { fillColor: [31, 41, 55] },
-    columnStyles: {
-      3: { cellWidth: 50 } // Columna ancha para escribir a mano
-    }
+    columnStyles: { 3: { cellWidth: 50 } } 
   });
 
-  // Instrucciones y Firmas
   const finalY = (doc as any).lastAutoTable.finalY + 20;
   doc.setFontSize(8);
   doc.setTextColor(100, 100, 100);
@@ -100,30 +163,24 @@ const generarOrdenCortePDF = () => {
   doc.text("Jefe de Mesa de Corte", 135, finalY + 45);
 
   doc.save(`OrdenCorte_${codigoOP}.pdf`);
-  alert('✅ Orden de Corte generada. Lista para imprimir.');
 };
 
-// Simular carga inicial
 onMounted(() => {
-  // Aquí luego llamaremos a api.get('/productos')
+  cargarDatosBase();
 });
 </script>
 
 <template>
   <div class="space-y-6 animate-fade-in">
-    <!-- HEADER -->
     <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
       <h2 class="text-3xl font-black text-gray-900 tracking-tight">1. Generación de Orden de Producción ✂️</h2>
       <p class="text-gray-500 mt-2 font-medium">Define la matriz de corte (tallas, colores y cantidades) antes de confeccionar.</p>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      
-      <!-- COLUMNA IZQUIERDA: DATOS GENERALES -->
       <div class="lg:col-span-4 space-y-6">
         <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Datos de la OP</h3>
-          
           <div class="space-y-4">
             <div>
               <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Producto a Fabricar</label>
@@ -132,12 +189,10 @@ onMounted(() => {
                 <option v-for="p in productos" :key="p.id" :value="p.id">{{ p.nombre }}</option>
               </select>
             </div>
-            
             <div>
               <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Fecha de Inicio</label>
               <input type="date" v-model="form.fechaInicio" class="w-full border-2 border-gray-200 p-3 rounded-xl font-bold text-gray-700 outline-none focus:border-red-500">
             </div>
-            
             <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 text-center mt-6">
               <p class="text-xs text-gray-500 uppercase font-bold tracking-widest">Total Programado</p>
               <p class="text-4xl font-black text-red-600">{{ totalPrendas }} <span class="text-sm text-gray-500 font-normal">und</span></p>
@@ -146,7 +201,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- COLUMNA DERECHA: MATRIZ DE CORTE -->
       <div class="lg:col-span-8">
         <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <div class="flex justify-between items-center mb-4 border-b pb-2">
@@ -156,22 +210,26 @@ onMounted(() => {
             </button>
           </div>
 
-          <!-- LA TABLA DE CAPTURA -->
           <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse">
               <thead>
                 <tr class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
-                  <th class="p-3 rounded-tl-lg">Color (Ej: Rojo)</th>
-                  <th class="p-3">Talla</th>
+                  <th class="p-3 rounded-tl-lg w-1/3">Color (De Catálogo)</th>
+                  <th class="p-3 w-1/4">Talla</th>
                   <th class="p-3">Cantidad</th>
                   <th class="p-3 rounded-tr-lg w-10 text-center">Acción</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100">
                 <tr v-for="(fila, index) in detallesMatriz" :key="index" class="hover:bg-gray-50 transition-colors">
+                  
                   <td class="p-2">
-                    <input type="text" v-model="fila.color" placeholder="Color de tela" class="w-full border border-gray-300 p-2 rounded-lg outline-none focus:border-red-500">
+                    <select v-model="fila.color" class="w-full border border-gray-300 p-2 rounded-lg outline-none focus:border-red-500">
+                      <option value="" disabled>Elegir Color...</option>
+                      <option v-for="c in colores" :key="c.id" :value="c.nombre">{{ c.nombre }}</option>
+                    </select>
                   </td>
+
                   <td class="p-2">
                     <select v-model="fila.talla" class="w-full border border-gray-300 p-2 rounded-lg outline-none focus:border-red-500">
                       <option value="" disabled>Talla...</option>
@@ -191,16 +249,15 @@ onMounted(() => {
             </table>
           </div>
 
-          <!-- BOTÓN GENERAR -->
           <div class="mt-8 flex justify-end">
-            <button @click="generarOrdenCortePDF" class="bg-red-600 hover:bg-red-700 text-white py-3 px-8 rounded-xl font-black text-lg shadow-lg shadow-red-500/30 transition-all flex items-center gap-2">
-              📄 Generar Orden de Corte (PDF)
+            <button @click="procesarOrdenProduccion" :disabled="guardando" class="bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white py-3 px-8 rounded-xl font-black text-lg shadow-lg shadow-red-500/30 transition-all flex items-center gap-2">
+              <span v-if="guardando" class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              <span v-else>💾 Generar OP e Imprimir PDF</span>
             </button>
           </div>
 
         </div>
       </div>
-
     </div>
   </div>
 </template>
