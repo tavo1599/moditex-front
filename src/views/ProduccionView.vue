@@ -167,7 +167,11 @@ const lanzar = async () => {
       productoId: Number(productoId.value),
       matriz: matriz.value,
       servicios: serviciosListos,
-      cif: gastosCif.value.filter(c => c.concepto && c.costoTotal > 0)
+      cif: gastosCif.value.filter(c => c.concepto && c.costoTotal > 0),
+      // 🔥 Enviamos el margen del slider para que el backend lo guarde en OrdenCosteoFinal.
+      //    Mandamos minorista y mayorista; el backend acepta el formato porcentaje (ej. 30).
+      margenMinorista: margenGanancia.value,
+      margenMayorista: margenGanancia.value
     });
     
     resumenOrden.value = {

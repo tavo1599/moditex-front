@@ -128,64 +128,126 @@ const guardarRutaTaller = async () => {
 // ==========================================
 // GENERADOR DE GUÍA CON QR INTEGRADO
 // ==========================================
+// ==========================================
+// GENERADOR DE GUÍA ECO-FRIENDLY Y CON TOTALES
+// ==========================================
 const generarGuiaDesdeRuta = async (ruta: any) => {
   const correlativoGuia = `GR-TALLER-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
   
-  // Generamos el QR con la data de la guía
-  // En el futuro, este QR puede llevar a una URL de confirmación de entrega
+  // Generamos el QR
   const qrDataUrl = await QRCode.toDataURL(`GUIA: ${correlativoGuia} | OP: ${ordenDetalle.value.codigoOp} | Taller: ${ruta.taller?.razonSocial}`);
 
   const doc = new jsPDF();
   
-  // Encabezado
-  doc.setFillColor(31, 41, 55); 
-  doc.rect(0, 0, 210, 35, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
-  doc.setFont("helvetica", "bold");
-  doc.text("GUÍA DE REMISIÓN - SALIDA A TERCEROS", 15, 22);
-
-  // Datos de la Guía e Imagen QR
+  // 1. ENCABEZADO AHORRADOR DE TINTA (Sin rectángulos negros)
   doc.setTextColor(0, 0, 0);
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.text("GUÍA DE REMISIÓN - TRASLADO A TALLER", 15, 22);
+
+  // Línea delgada separadora
+  doc.setLineWidth(0.3);
+  doc.line(15, 26, 195, 26);
+
+  // Datos de la Guía
   doc.setFontSize(10);
-  doc.text(`N° GUÍA: ${correlativoGuia}`, 15, 45);
-  doc.text(`Fecha de Traslado: ${new Date().toLocaleDateString()}`, 15, 52);
-  doc.text(`OP Referencia: ${ordenDetalle.value.codigoOp}`, 15, 59);
+  doc.setFont("helvetica", "bold");
+  doc.text(`N° GUÍA: ${correlativoGuia}`, 15, 36);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Fecha de Traslado: ${new Date().toLocaleDateString()}`, 15, 43);
+  doc.text(`OP Referencia: ${ordenDetalle.value.codigoOp}`, 15, 50);
   
   // Insertamos el QR al lado derecho
-  doc.addImage(qrDataUrl, 'PNG', 165, 40, 30, 30);
-  doc.setFontSize(8);
-  doc.text("ESCANEADO INTERNO", 166, 72);
+  doc.addImage(qrDataUrl, 'PNG', 165, 30, 25, 25);
+  doc.setFontSize(7);
+  doc.text("CÓDIGO DE LOTE", 167, 58);
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  doc.text("DESTINATARIO (TALLER):", 85, 45);
+  doc.text("DESTINATARIO (TALLER):", 85, 36);
   doc.setFont("helvetica", "normal");
-  doc.text(`Razón Social: ${ruta.taller?.razonSocial || 'Taller No Definido'}`, 85, 52);
-  doc.text(`Servicio: ${ruta.tipoServicio.toUpperCase()}`, 85, 59);
+  doc.text(`Razón Social: ${ruta.taller?.razonSocial || 'Taller No Definido'}`, 85, 43);
+  doc.text(`Servicio: ${ruta.tipoServicio.toUpperCase()}`, 85, 50);
 
-  // Tabla de Contenido
-  const bodyTabla = ordenDetalle.value.detallesMatriz.map((d: any) => [
-    `Cortes para ${ordenDetalle.value.producto.nombre}`, 
-    d.color, 
-    d.talla, 
-    `${d.cantidadProgramada} pzas`
-  ]);
+  // 2. MATEMÁTICA: AGRUPACIÓN Y TOTALES
+  let totalGeneral = 0;
+  const subtotalesPorColor: Record<string, number> = {};
 
-  autoTable(doc, {
-    startY: 75,
-    head: [['Descripción del Bien', 'Color', 'Talla', 'Cantidad']],
-    body: bodyTabla,
-    theme: 'striped',
-    headStyles: { fillColor: [31, 41, 55] }
+  const bodyTabla = ordenDetalle.value.detallesMatriz.map((d: any) => {
+    // Forzamos a que extraiga el nombre real del color y no un objeto ni un código
+    const nombreColorCompleto = typeof d.color === 'object' ? d.color.nombre : d.color;
+    const cant = Number(d.cantidadProgramada);
+
+    // Llenamos la calculadora invisible
+    totalGeneral += cant;
+    if (!subtotalesPorColor[nombreColorCompleto]) subtotalesPorColor[nombreColorCompleto] = 0;
+    subtotalesPorColor[nombreColorCompleto] += cant;
+
+    return [
+      ordenDetalle.value.producto?.nombre || 'Producto sin nombre', 
+      nombreColorCompleto.toUpperCase(), // Color limpio
+      d.talla.toUpperCase(), 
+      `${cant} pzas`
+    ];
   });
 
-  const finalY = (doc as any).lastAutoTable.finalY + 35;
+  // 3. TABLA LIMPIA (Estilo "grid" sin rellenos pesados)
+  autoTable(doc, {
+    startY: 65,
+    head: [['Descripción del Bien', 'Color', 'Talla', 'Cantidad']],
+    body: bodyTabla,
+    theme: 'grid',
+    headStyles: { 
+      fillColor: [240, 240, 240], // Gris súper clarito
+      textColor: [0, 0, 0],       // Letra negra
+      lineColor: [150, 150, 150], 
+      lineWidth: 0.1 
+    },
+    styles: {
+      lineColor: [150, 150, 150], 
+      lineWidth: 0.1
+    }
+  });
+
+  // 4. RESUMEN DE TOTALES AL FINAL DE LA TABLA
+  let finalY = (doc as any).lastAutoTable.finalY + 10;
+  
+  // Rectángulo suave para agrupar el resumen
+  doc.setDrawColor(200, 200, 200);
+  doc.setFillColor(250, 250, 250);
+  doc.rect(15, finalY - 5, 180, 10 + (Object.keys(subtotalesPorColor).length * 6) + 10, 'FD');
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.text("RESUMEN DE CANTIDADES A ENTREGAR:", 20, finalY);
+  
+  finalY += 7;
+  doc.setFont("helvetica", "normal");
+  
+  // Imprime cada color y su subtotal
+  Object.entries(subtotalesPorColor).forEach(([color, cant]) => {
+    doc.text(`• Subtotal ${color.toUpperCase()}:`, 25, finalY);
+    doc.text(`${cant} pzas`, 85, finalY);
+    finalY += 6;
+  });
+
+  // El Gran Total Remarcado
+  finalY += 3;
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text("TOTAL GENERAL:", 25, finalY);
+  doc.text(`${totalGeneral} pzas`, 85, finalY);
+
+  // 5. ESPACIO DE FIRMAS
+  finalY += 35;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
   doc.text("___________________________", 30, finalY);
   doc.text("Firma de Entrega", 40, finalY + 5);
   doc.text("___________________________", 130, finalY);
   doc.text("Recepción en Taller", 135, finalY + 5);
 
+  // Guarda y Descarga
   doc.save(`${correlativoGuia}.pdf`);
 };
 
@@ -193,23 +255,66 @@ const generarGuiaDesdeRuta = async (ruta: any) => {
 // LÓGICA DE ESTADOS
 // ==========================================
 const cambiarEstado = async (nuevoEstado: string) => {
-  let mensaje = `¿Estás seguro de marcar esta orden como "${nuevoEstado}"?`;
-  if (nuevoEstado === 'Terminada') mensaje = `✅ ¿Finalizar producción?\n\nAl confirmar, la mercadería pasará al Almacén de Terminados.`;
-  if (nuevoEstado === 'Anulada') mensaje = `🚨 ¿ANULAR ORDEN?\n\nEsto detendrá la producción irreversiblemente.`;
+  // Datos extra que se mandan al backend junto con el estado
+  const extra: Record<string, any> = { estado: nuevoEstado };
 
-  if (!confirm(mensaje)) return;
+  if (nuevoEstado === 'Terminada') {
+    // 🔥 Preguntamos cuántas prendas BUENAS salieron de verdad.
+    //    Esto permite que el backend recalcule el COSTO REAL por prenda
+    //    (inversión total ÷ prendas buenas), en vez de usar lo programado.
+    const programado = obtenerTotalProgramado(ordenDetalle.value);
+    const respuesta = prompt(
+      `✅ Finalizar producción de ${ordenDetalle.value.codigoOp}.\n\n` +
+      `Programaste ${programado} prendas.\n` +
+      `¿Cuántas prendas BUENAS salieron de verdad?\n\n` +
+      `(Deja el número tal cual si salieron todas)`,
+      String(programado)
+    );
+
+    // Si cancela el prompt, abortamos sin cambiar nada
+    if (respuesta === null) return;
+
+    const cantidadReal = Number(respuesta);
+    if (isNaN(cantidadReal) || cantidadReal <= 0) {
+      alert('⚠️ La cantidad debe ser un número mayor a 0.');
+      return;
+    }
+    if (cantidadReal > programado) {
+      alert(`⚠️ No puedes producir más (${cantidadReal}) de lo programado (${programado}).`);
+      return;
+    }
+    extra.cantidadRealProducida = cantidadReal;
+
+    if (!confirm(
+      `Se registrarán ${cantidadReal} prendas y la mercadería pasará al Almacén de Terminados.\n` +
+      `El costo por prenda se recalculará con esta cantidad. ¿Confirmas?`
+    )) return;
+  } else {
+    let mensaje = `¿Estás seguro de marcar esta orden como "${nuevoEstado}"?`;
+    if (nuevoEstado === 'Anulada') mensaje = `🚨 ¿ANULAR ORDEN?\n\nEsto detendrá la producción irreversiblemente.`;
+    if (!confirm(mensaje)) return;
+  }
 
   actualizandoEstado.value = true;
   try {
-    await api.patch(`/ordenes/${ordenDetalle.value.id}/estado`, { estado: nuevoEstado });
+    await api.patch(`/ordenes/${ordenDetalle.value.id}/estado`, extra);
     ordenDetalle.value.estado = nuevoEstado;
     const index = ordenes.value.findIndex(o => o.id === ordenDetalle.value.id);
     if (index !== -1) ordenes.value[index].estado = nuevoEstado;
   } catch (error: any) {
-    alert("Error al actualizar estado.");
+    alert("Error: " + (error.response?.data?.message || "No se pudo actualizar el estado."));
   } finally {
     actualizandoEstado.value = false;
   }
+};
+
+// Suma la cantidad programada de toda la matriz de la orden (tolerante a distintos nombres de campo)
+const obtenerTotalProgramado = (orden: any): number => {
+  const matriz = orden?.detallesMatriz || orden?.detalles || [];
+  return matriz.reduce(
+    (sum: number, d: any) => sum + Number(d.cantidadProgramada ?? d.cantidad ?? 0),
+    0
+  );
 };
 
 const formatearFecha = (fecha: string) => {

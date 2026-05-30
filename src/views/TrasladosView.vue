@@ -247,46 +247,111 @@ const totalPrendasAMover = computed(() => {
   return total;
 });
 
-// --- GENERAR PDF MULTIPRODUCTO ---
+// --- GENERAR PDF MULTIPRODUCTO (VERSIÓN ECO-FRIENDLY CON TOTALES) ---
 const generarGuiaTraslado = async (origen: any, destino: any, detallesCompletos: any[], correlativo: string) => {
   const doc = new jsPDF();
   const qrDataUrl = await QRCode.toDataURL(correlativo);
 
-  doc.setFillColor(15, 23, 42); 
-  doc.rect(0, 0, 210, 40, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
+  // 1. ENCABEZADO AHORRADOR DE TINTA
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
-  doc.text("GUÍA DE TRASLADO INTERNO", 15, 25);
+  doc.text("GUÍA DE TRASLADO INTERNO", 15, 22);
+
+  doc.setLineWidth(0.3);
+  doc.line(15, 26, 195, 26);
+
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 145, 25);
+  doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 150, 20);
   
-  doc.setTextColor(0, 0, 0);
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  doc.text("ALMACÉN ORIGEN:", 15, 55); 
+  doc.text("ALMACÉN ORIGEN:", 15, 36); 
   doc.setFont("helvetica", "normal"); 
-  doc.text(`${origen.nombre}`, 15, 62);
-  doc.setFont("helvetica", "bold");
-  doc.text("ALMACÉN DESTINO:", 110, 55); 
-  doc.setFont("helvetica", "normal"); 
-  doc.text(`${destino.nombre}`, 110, 62);
+  doc.text(`${origen.nombre}`, 15, 43);
   
   doc.setFont("helvetica", "bold");
-  doc.text(`Código de Control: ${correlativo}`, 15, 75);
-  doc.addImage(qrDataUrl, 'PNG', 160, 45, 32, 32);
+  doc.text("ALMACÉN DESTINO:", 110, 36); 
+  doc.setFont("helvetica", "normal"); 
+  doc.text(`${destino.nombre}`, 110, 43);
+  
+  doc.setFont("helvetica", "bold");
+  doc.text(`Código de Control: ${correlativo}`, 15, 55);
+  
+  doc.addImage(qrDataUrl, 'PNG', 165, 30, 25, 25);
+  doc.setFontSize(7);
+  doc.text("ESCANEO DE RECEPCIÓN", 163, 58);
 
-  autoTable(doc, {
-    startY: 85,
-    head: [['Código Base', 'Descripción Producto', 'Variante Color', 'Talla', 'Volumen']],
-    body: detallesCompletos.map(d => [d.sku || 'N/A', d.nombre, d.color, d.talla, `${d.cantidad} uds`]),
-    theme: 'grid',
-    headStyles: { fillColor: [15, 23, 42] }
+  // 2. MATEMÁTICA: TOTALES Y SUBTOTALES POR COLOR
+  let totalGeneral = 0;
+  const subtotalesPorColor: Record<string, number> = {};
+
+  const bodyTabla = detallesCompletos.map(d => {
+    const nombreColorCompleto = typeof d.color === 'object' ? d.color.nombre : d.color;
+    const cant = Number(d.cantidad);
+
+    totalGeneral += cant;
+    if (!subtotalesPorColor[nombreColorCompleto]) subtotalesPorColor[nombreColorCompleto] = 0;
+    subtotalesPorColor[nombreColorCompleto] += cant;
+
+    return [
+      d.sku || 'N/A', 
+      d.nombre, 
+      nombreColorCompleto.toUpperCase(), 
+      d.talla.toUpperCase(), 
+      `${cant} uds`
+    ];
   });
 
-  const finalY = (doc as any).lastAutoTable.finalY + 35;
+  // 3. TABLA LIMPIA ECO-FRIENDLY
+  autoTable(doc, {
+    startY: 65,
+    head: [['Código Base', 'Descripción Producto', 'Color', 'Talla', 'Cantidad']],
+    body: bodyTabla,
+    theme: 'grid',
+    headStyles: { 
+      fillColor: [240, 240, 240],
+      textColor: [0, 0, 0],
+      lineColor: [150, 150, 150], 
+      lineWidth: 0.1 
+    },
+    styles: {
+      lineColor: [150, 150, 150], 
+      lineWidth: 0.1
+    }
+  });
+
+  // 4. RESUMEN DE TOTALES AL FINAL DE LA TABLA
+  let finalY = (doc as any).lastAutoTable.finalY + 10;
+  
+  doc.setDrawColor(200, 200, 200);
+  doc.setFillColor(250, 250, 250);
+  doc.rect(15, finalY - 5, 180, 10 + (Object.keys(subtotalesPorColor).length * 6) + 10, 'FD');
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.text("RESUMEN DE TRASLADO:", 20, finalY);
+  
+  finalY += 7;
+  doc.setFont("helvetica", "normal");
+  
+  Object.entries(subtotalesPorColor).forEach(([color, cant]) => {
+    doc.text(`• Subtotal ${color.toUpperCase()}:`, 25, finalY);
+    doc.text(`${cant} uds`, 85, finalY);
+    finalY += 6;
+  });
+
+  finalY += 3;
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text("TOTAL GENERAL:", 25, finalY);
+  doc.text(`${totalGeneral} uds`, 85, finalY);
+
+  // 5. ESPACIO DE FIRMAS
+  finalY += 30;
   doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
   doc.text("___________________________", 30, finalY);
   doc.text("Despachado por (Origen)", 35, finalY + 5);
   doc.text("___________________________", 130, finalY);
