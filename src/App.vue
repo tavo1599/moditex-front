@@ -11,9 +11,9 @@ const authStore = useAuthStore()
     
     <Sidebar v-if="authStore.estaAutenticado" />
 
-    <main 
+    <main
       class="flex-1 overflow-y-auto"
-      :class="{ 'p-8': authStore.estaAutenticado }" 
+      :class="{ 'px-4 py-4 pt-20 md:p-8': authStore.estaAutenticado }"
     >
       <RouterView />
     </main>

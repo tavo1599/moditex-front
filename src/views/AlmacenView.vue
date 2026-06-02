@@ -66,33 +66,6 @@ watch([() => form.value.stockActual, () => form.value.costoTotalFactura], ([stoc
 });
 
 // ==========================================
-// ESTADOS: MODAL DE COMPRA (Costo Promedio)
-// ==========================================
-const mostrarModalCompra = ref(false);
-const insumoSeleccionado = ref<any>(null);
-const formCompra = ref({
-  cantidadNueva: 0,
-  costoTotalFactura: 0,
-  nuevoCostoPromedio: 0
-});
-
-// Vigilante para calcular el Costo Promedio Ponderado (CPP)
-watch([() => formCompra.value.cantidadNueva, () => formCompra.value.costoTotalFactura], ([cantNueva, totalFactura]) => {
-  if (cantNueva > 0 && totalFactura > 0 && insumoSeleccionado.value) {
-    const stockActual = Number(insumoSeleccionado.value.stockActual);
-    const costoAnterior = Number(insumoSeleccionado.value.costoUnitario);
-    
-    const valorInventarioActual = stockActual * costoAnterior;
-    const nuevoValorTotal = valorInventarioActual + totalFactura;
-    const nuevoStockTotal = stockActual + cantNueva;
-    
-    formCompra.value.nuevoCostoPromedio = Number((nuevoValorTotal / nuevoStockTotal).toFixed(4));
-  } else {
-    formCompra.value.nuevoCostoPromedio = 0;
-  }
-});
-
-// ==========================================
 // FUNCIONES CRUD
 // ==========================================
 const cargarInsumos = async () => {
@@ -130,12 +103,6 @@ const abrirModalEditar = (insumo: any) => {
   mostrarModal.value = true;
 };
 
-const abrirModalCompra = (insumo: any) => {
-  insumoSeleccionado.value = insumo;
-  formCompra.value = { cantidadNueva: 0, costoTotalFactura: 0, nuevoCostoPromedio: 0 };
-  mostrarModalCompra.value = true;
-};
-
 const guardarInsumo = async () => {
   if (!form.value.codigo || !form.value.nombre) return alert("Código y Nombre son obligatorios");
   try {
@@ -152,20 +119,27 @@ const guardarInsumo = async () => {
   }
 };
 
-const guardarCompra = async () => {
-  if (formCompra.value.cantidadNueva <= 0 || formCompra.value.costoTotalFactura <= 0) {
-    return alert("Ingresa valores válidos para la compra.");
-  }
+// ==========================================
+// HISTORIAL / KARDEX DE INSUMO
+// ==========================================
+const mostrarModalHistorial = ref(false);
+const cargandoHistorial = ref(false);
+const insumoHistorial = ref<any>(null);
+const movimientos = ref<any[]>([]);
+
+const abrirHistorial = async (insumo: any) => {
+  insumoHistorial.value = insumo;
+  movimientos.value = [];
+  mostrarModalHistorial.value = true;
+  cargandoHistorial.value = true;
   try {
-    await api.put(`/insumos/${insumoSeleccionado.value.id}/compra`, {
-      cantidadAgregada: formCompra.value.cantidadNueva,
-      nuevoCostoPromedio: formCompra.value.nuevoCostoPromedio
-    });
-    mostrarModalCompra.value = false;
-    cargarInsumos();
-    alert("Inventario y costos actualizados correctamente.");
+    const res = await api.get(`/insumos/${insumo.id}/historial`);
+    // Mostramos lo más reciente primero
+    movimientos.value = [...res.data].reverse();
   } catch (error) {
-    alert("Error al procesar la compra.");
+    console.error("Error al cargar el historial del insumo:", error);
+  } finally {
+    cargandoHistorial.value = false;
   }
 };
 
@@ -250,8 +224,8 @@ onMounted(() => cargarInsumos());
               
               <td class="p-4 text-center">
                 <div class="flex justify-center gap-2">
-                  <button @click="abrirModalCompra(insumo)" class="bg-green-100 text-green-700 hover:bg-green-200 px-3 py-1.5 rounded-lg font-bold text-xs transition shadow-sm border border-green-200">
-                    🛒 Comprar
+                  <button @click="abrirHistorial(insumo)" class="bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg font-bold text-xs transition shadow-sm border border-slate-200">
+                    📋 Historial
                   </button>
                   <button @click="abrirModalEditar(insumo)" class="text-blue-500 hover:text-blue-700 hover:bg-blue-50 px-2 py-1.5 rounded-lg font-bold text-xs transition">✏️ Editar</button>
                   <button @click="eliminarInsumo(insumo.id, insumo.nombre)" class="text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1.5 rounded-lg font-bold text-xs transition">🗑️</button>
@@ -349,41 +323,58 @@ onMounted(() => cargarInsumos());
       </div>
     </div>
 
-    <div v-if="mostrarModalCompra" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
-        <div class="bg-green-600 p-4 text-white font-bold text-center flex justify-between items-center">
-          <span>🛒 Ingresar Compra de Insumo</span>
-          <button @click="mostrarModalCompra = false" class="hover:text-gray-200 text-2xl leading-none">&times;</button>
-        </div>
-        
-        <div class="p-6 space-y-4">
-          <p class="text-sm font-bold text-gray-700 text-center">{{ insumoSeleccionado?.nombre }}</p>
-          <div class="flex justify-between text-xs text-gray-600 bg-gray-100 p-3 rounded-lg border border-gray-200 shadow-inner">
-            <div class="flex flex-col"><span class="uppercase text-[10px] font-bold text-gray-400">Stock Actual</span><span class="font-black text-sm">{{ insumoSeleccionado?.stockActual }}</span></div>
-            <div class="flex flex-col text-right"><span class="uppercase text-[10px] font-bold text-gray-400">Costo Actual</span><span class="font-black text-sm">S/ {{ Number(insumoSeleccionado?.costoUnitario).toFixed(4) }}</span></div>
+    <div v-if="mostrarModalHistorial" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in zoom-in duration-200 flex flex-col max-h-[85vh]">
+        <div class="bg-slate-800 p-5 flex justify-between items-center text-white">
+          <div>
+            <h3 class="text-lg font-bold">📋 Kardex de Insumo</h3>
+            <p class="text-xs text-slate-300">{{ insumoHistorial?.nombre }} ({{ insumoHistorial?.codigo }})</p>
           </div>
-
-          <div class="grid grid-cols-2 gap-4 mt-4">
-            <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cant. Ingresada</label>
-              <input type="number" step="0.01" v-model.number="formCompra.cantidadNueva" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-green-500 font-bold text-center bg-gray-50">
-            </div>
-            <div>
-              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Monto Pagado (S/)</label>
-              <input type="number" step="0.01" v-model.number="formCompra.costoTotalFactura" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-green-500 font-bold text-center bg-green-50 text-green-700">
-            </div>
-          </div>
-
-          <div class="mt-4 bg-green-100 p-4 rounded-xl border border-dashed border-green-400 text-center shadow-sm">
-            <label class="block text-xs font-bold text-green-800 uppercase mb-1">Nuevo Costo Promedio (CPP)</label>
-            <p class="text-3xl font-black text-green-900">S/ {{ formCompra.nuevoCostoPromedio }}</p>
-            <p class="text-[10px] font-bold text-green-700 mt-2 bg-green-200 inline-block px-2 py-0.5 rounded-full">Este costo se usará en futuras producciones</p>
-          </div>
+          <button @click="mostrarModalHistorial = false" class="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
         </div>
 
-        <div class="bg-gray-50 p-4 border-t border-gray-100 flex justify-end gap-3">
-          <button @click="mostrarModalCompra = false" class="px-5 py-2.5 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition">Cancelar</button>
-          <button @click="guardarCompra" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-md transition">Confirmar Compra</button>
+        <div class="overflow-y-auto flex-1">
+          <div v-if="cargandoHistorial" class="text-center py-12 text-gray-500 font-medium">
+            <div class="animate-spin inline-block w-8 h-8 border-4 border-slate-600 border-t-transparent rounded-full mb-4"></div>
+            <p>Cargando movimientos...</p>
+          </div>
+
+          <table v-else class="w-full text-left text-sm">
+            <thead class="bg-gray-100 text-gray-600 font-bold uppercase text-[10px] tracking-wider sticky top-0">
+              <tr>
+                <th class="p-3">Fecha</th>
+                <th class="p-3">Tipo</th>
+                <th class="p-3">Motivo</th>
+                <th class="p-3 text-right">Cantidad</th>
+                <th class="p-3 text-right">Costo Unit.</th>
+                <th class="p-3 text-right">Saldo</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <tr v-if="movimientos.length === 0">
+                <td colspan="6" class="p-8 text-center text-gray-400 font-bold">Aún no hay movimientos registrados para este insumo.</td>
+              </tr>
+              <tr v-for="mov in movimientos" :key="mov.id" class="hover:bg-slate-50">
+                <td class="p-3 text-gray-500 text-xs whitespace-nowrap">{{ new Date(mov.fecha).toLocaleString('es-PE') }}</td>
+                <td class="p-3">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold"
+                    :class="Number(mov.cantidad) >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
+                    {{ mov.tipoMovimiento }}
+                  </span>
+                </td>
+                <td class="p-3 text-gray-700 text-xs">{{ mov.motivo }}</td>
+                <td class="p-3 text-right font-bold" :class="Number(mov.cantidad) >= 0 ? 'text-green-600' : 'text-red-500'">
+                  {{ Number(mov.cantidad) >= 0 ? '+' : '' }}{{ Number(mov.cantidad).toFixed(2) }}
+                </td>
+                <td class="p-3 text-right text-gray-600">S/ {{ Number(mov.costoUnitario).toFixed(4) }}</td>
+                <td class="p-3 text-right font-black text-gray-800">{{ Number(mov.saldoResultante).toFixed(2) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bg-gray-50 p-4 border-t border-gray-100 flex justify-end">
+          <button @click="mostrarModalHistorial = false" class="px-5 py-2.5 font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition">Cerrar</button>
         </div>
       </div>
     </div>

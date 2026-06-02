@@ -45,12 +45,13 @@ const cargarOrdenes = async () => {
 const cargarTalleres = async () => {
   try {
     // Asegúrate de que esta ruta coincida con tu backend para traer la lista de proveedores/talleres
-    const res = await api.get('/talleres'); 
+    const res = await api.get('/talleres');
     talleres.value = res.data;
   } catch (error) {
     console.error("Error al cargar la lista de talleres:", error);
   }
 };
+
 
 const abrirDetalles = async (id: number) => {
   mostrarModal.value = true;
@@ -258,40 +259,11 @@ const cambiarEstado = async (nuevoEstado: string) => {
   // Datos extra que se mandan al backend junto con el estado
   const extra: Record<string, any> = { estado: nuevoEstado };
 
-  if (nuevoEstado === 'Terminada') {
-    // 🔥 Preguntamos cuántas prendas BUENAS salieron de verdad.
-    //    Esto permite que el backend recalcule el COSTO REAL por prenda
-    //    (inversión total ÷ prendas buenas), en vez de usar lo programado.
-    const programado = obtenerTotalProgramado(ordenDetalle.value);
-    const respuesta = prompt(
-      `✅ Finalizar producción de ${ordenDetalle.value.codigoOp}.\n\n` +
-      `Programaste ${programado} prendas.\n` +
-      `¿Cuántas prendas BUENAS salieron de verdad?\n\n` +
-      `(Deja el número tal cual si salieron todas)`,
-      String(programado)
-    );
-
-    // Si cancela el prompt, abortamos sin cambiar nada
-    if (respuesta === null) return;
-
-    const cantidadReal = Number(respuesta);
-    if (isNaN(cantidadReal) || cantidadReal <= 0) {
-      alert('⚠️ La cantidad debe ser un número mayor a 0.');
-      return;
-    }
-    if (cantidadReal > programado) {
-      alert(`⚠️ No puedes producir más (${cantidadReal}) de lo programado (${programado}).`);
-      return;
-    }
-    extra.cantidadRealProducida = cantidadReal;
-
-    if (!confirm(
-      `Se registrarán ${cantidadReal} prendas y la mercadería pasará al Almacén de Terminados.\n` +
-      `El costo por prenda se recalculará con esta cantidad. ¿Confirmas?`
-    )) return;
-  } else {
+  // NOTA: "Terminada" ya no se hace aquí; la finalización (con prendas buenas,
+  // merma y costo real) se realiza en la pantalla de Recepción de Taller.
+  {
     let mensaje = `¿Estás seguro de marcar esta orden como "${nuevoEstado}"?`;
-    if (nuevoEstado === 'Anulada') mensaje = `🚨 ¿ANULAR ORDEN?\n\nEsto detendrá la producción irreversiblemente.`;
+    if (nuevoEstado === 'Anulada') mensaje = `🚨 ¿ANULAR ORDEN?\n\nEsto detendrá la producción irreversiblemente y devolverá los insumos.`;
     if (!confirm(mensaje)) return;
   }
 
@@ -306,15 +278,6 @@ const cambiarEstado = async (nuevoEstado: string) => {
   } finally {
     actualizandoEstado.value = false;
   }
-};
-
-// Suma la cantidad programada de toda la matriz de la orden (tolerante a distintos nombres de campo)
-const obtenerTotalProgramado = (orden: any): number => {
-  const matriz = orden?.detallesMatriz || orden?.detalles || [];
-  return matriz.reduce(
-    (sum: number, d: any) => sum + Number(d.cantidadProgramada ?? d.cantidad ?? 0),
-    0
-  );
 };
 
 const formatearFecha = (fecha: string) => {
@@ -490,11 +453,11 @@ onMounted(() => {
 
         <!-- PANEL DE ACCIONES INFERIOR -->
         <div v-if="!cargandoDetalle && ordenDetalle" class="bg-white p-6 border-t border-gray-200">
-          <div v-if="ordenDetalle.estado === 'En Proceso'" class="flex gap-3">
+          <div v-if="ordenDetalle.estado === 'En Proceso'" class="flex items-center gap-3">
             <button @click="cambiarEstado('Anulada')" class="px-6 py-3 border border-red-200 text-red-600 hover:bg-red-50 rounded-xl font-bold text-sm">Anular OP</button>
-            <button @click="cambiarEstado('Terminada')" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-black text-base shadow-lg shadow-green-500/30 flex justify-center gap-2">
-              ✅ Finalizar Producción
-            </button>
+            <p class="flex-1 text-sm text-gray-500 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 font-medium">
+              📥 La producción se finaliza en <span class="font-bold text-indigo-700">Recepción de Taller</span>, registrando las prendas buenas y la merma.
+            </p>
           </div>
         </div>
 

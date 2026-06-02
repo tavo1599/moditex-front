@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import api from '../api/axios';
+import { useAuthStore } from '../stores/auth';
 
 // 🚀 IMPORTACIÓN DE NUESTROS NUEVOS COMPONENTES LIMPIOS
 import GestionBodegas from '../components/almacen/GestionBodegas.vue';
@@ -8,6 +9,10 @@ import ModalIngresoLibre from '../components/almacen/ModalIngresoLibre.vue';
 import ModalEtiquetas from '../components/almacen/ModalEtiquetas.vue';
 import TableroKardex from '../components/almacen/TableroKardex.vue';
 import ModalHistorialKardex from '../components/almacen/ModalHistorialKardex.vue';
+
+// El vendedor solo CONSULTA y vende; las acciones de mover/ajustar stock son de ADMIN.
+const authStore = useAuthStore();
+const esAdmin = authStore.esAdmin;
 
 // ==========================================
 // ESTADOS PRINCIPALES DEL SISTEMA
@@ -135,7 +140,7 @@ onMounted(cargarDatos);
         <h2 class="text-3xl font-bold text-gray-800">Productos Terminados</h2>
         <p class="text-gray-500 mt-1">Controla tu stock real por bodega, talla y color.</p>
       </div>
-      <div class="flex gap-3">
+      <div class="flex gap-3" v-if="esAdmin">
         <button @click="vistaActiva = 'bodegas'" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2.5 rounded-lg font-bold shadow-sm transition-all flex items-center gap-2 text-sm border border-gray-200">
           <span>🏢</span> Gestionar Bodegas
         </button>
@@ -149,7 +154,7 @@ onMounted(cargarDatos);
       <button @click="vistaActiva = 'kardex'" class="pb-3 text-sm font-bold tracking-wide transition-colors border-b-2" :class="vistaActiva === 'kardex' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-400 hover:text-gray-600'">
         📑 KARDEX GENERAL
       </button>
-      <button @click="vistaActiva = 'bodegas'" class="pb-3 text-sm font-bold tracking-wide transition-colors border-b-2" :class="vistaActiva === 'bodegas' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-400 hover:text-gray-600'">
+      <button v-if="esAdmin" @click="vistaActiva = 'bodegas'" class="pb-3 text-sm font-bold tracking-wide transition-colors border-b-2" :class="vistaActiva === 'bodegas' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-400 hover:text-gray-600'">
         🏢 GESTIÓN DE BODEGAS
       </button>
     </div>
@@ -158,11 +163,12 @@ onMounted(cargarDatos);
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
     </div>
 
-    <TableroKardex 
+    <TableroKardex
       v-if="!cargando && vistaActiva === 'kardex'"
       :inventario="inventario"
       :bodegas="bodegas"
       :colores="colores"
+      :puede-ajustar="esAdmin"
       @abrir-etiquetas="abrirEtiquetas"
       @abrir-ajuste="abrirAjuste"
       @abrir-historial="abrirHistorial"

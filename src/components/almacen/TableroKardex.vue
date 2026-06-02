@@ -5,6 +5,7 @@ const props = defineProps<{
   inventario: any[];
   bodegas: any[];
   colores: any[];
+  puedeAjustar?: boolean; // solo ADMIN puede ver el botón de ajuste de stock
 }>();
 
 const emit = defineEmits(['abrir-etiquetas', 'abrir-ajuste', 'abrir-historial']);
@@ -135,7 +136,7 @@ const getNombreColor = (codigoColor: string) => {
                 <td class="p-3 flex justify-center gap-2">
                 <button v-if="item.stock > 0" @click="emit('abrir-etiquetas', item)" class="bg-gray-800 hover:bg-black text-white px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition shadow-sm">🖨️ SKU</button>
                 <button @click="emit('abrir-historial', item)" title="Historial Kardex" class="bg-white border border-gray-200 hover:bg-blue-50 text-gray-600 hover:text-blue-600 px-2.5 py-1.5 rounded-lg text-sm transition-all shadow-sm">📊</button>
-                <button @click="emit('abrir-ajuste', item)" title="Ajuste Manual" class="bg-white border border-gray-200 hover:bg-yellow-50 text-gray-600 hover:text-yellow-600 px-2.5 py-1.5 rounded-lg text-sm transition-all shadow-sm">⚙️</button>
+                <button v-if="puedeAjustar" @click="emit('abrir-ajuste', item)" title="Ajuste Manual" class="bg-white border border-gray-200 hover:bg-yellow-50 text-gray-600 hover:text-yellow-600 px-2.5 py-1.5 rounded-lg text-sm transition-all shadow-sm">⚙️</button>
                 </td>
             </tr>
           </template>

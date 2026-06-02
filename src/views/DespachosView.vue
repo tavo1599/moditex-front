@@ -50,12 +50,62 @@ const cambiarEstado = async (despacho: Despacho, nuevoEstado: string) => {
   try {
     // Si tu backend tiene esta ruta en despachos, déjala así. Si no, tendrás que crear un PATCH en el controller.
     await api.patch(`/despachos/${despacho.id}/estado`, { estado: nuevoEstado });
-    
+
     alert(`El despacho ha sido marcado como: ${nuevoEstado} ✅`);
     cargarDespachos();
   } catch (error) {
     console.error("Error al actualizar estado:", error);
     alert("Hubo un problema al actualizar el estado.");
+  }
+};
+
+// ========================================================
+// CONFIRMACIÓN POR ESCANEO DE QR
+// Escanea el código de la guía y avanza el despacho al siguiente
+// estado (Listo → En Tránsito → Entregado), sin buscar la tarjeta.
+// ========================================================
+const codigoEscaneado = ref('');
+const escaneando = ref(false);
+
+const siguienteEstado = (estado: string): string | null => {
+  if (estado === 'Listo para Empaque') return 'En Tránsito';
+  if (estado === 'En Tránsito') return 'Entregado';
+  return null; // ya entregado
+};
+
+const confirmarPorEscaneo = async () => {
+  const codigo = codigoEscaneado.value.trim();
+  if (!codigo) return;
+
+  // El QR codifica el codigoGuia; lo buscamos en la lista cargada
+  const despacho = despachos.value.find(
+    (d) => String(d.codigoGuia).toUpperCase() === codigo.toUpperCase()
+  );
+
+  if (!despacho) {
+    alert(`❌ No se encontró un despacho pendiente con la guía "${codigo}".`);
+    codigoEscaneado.value = '';
+    return;
+  }
+
+  const nuevo = siguienteEstado(despacho.estado);
+  if (!nuevo) {
+    alert(`ℹ️ El despacho "${codigo}" ya fue entregado.`);
+    codigoEscaneado.value = '';
+    return;
+  }
+
+  escaneando.value = true;
+  try {
+    await api.patch(`/despachos/${despacho.id}/estado`, { estado: nuevo });
+    alert(`✅ Guía ${codigo} (${despacho.cliente}) → ${nuevo}`);
+    codigoEscaneado.value = '';
+    cargarDespachos();
+  } catch (error) {
+    console.error('Error al confirmar por escaneo:', error);
+    alert('Hubo un problema al actualizar el estado.');
+  } finally {
+    escaneando.value = false;
   }
 };
 
@@ -174,6 +224,28 @@ onMounted(() => {
         <button @click="cargarDespachos" class="mt-4 md:mt-0 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold transition-colors flex items-center gap-2">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
           Actualizar
+        </button>
+      </div>
+
+      <!-- CONFIRMACIÓN RÁPIDA POR ESCANEO DE QR -->
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row items-center gap-3">
+        <div class="flex items-center gap-2 text-gray-700 font-bold shrink-0">
+          <span class="text-2xl">📷</span>
+          <span>Confirmar por escaneo</span>
+        </div>
+        <input
+          v-model="codigoEscaneado"
+          @keyup.enter="confirmarPorEscaneo"
+          type="text"
+          placeholder="Escanea el QR de la guía o escribe el código y presiona Enter..."
+          class="flex-1 w-full border-2 border-gray-200 p-3 rounded-xl font-bold outline-none focus:border-indigo-500 transition-all font-mono uppercase"
+        >
+        <button
+          @click="confirmarPorEscaneo"
+          :disabled="escaneando"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold transition-all shrink-0 disabled:opacity-50"
+        >
+          {{ escaneando ? 'Procesando...' : 'Avanzar estado' }}
         </button>
       </div>
 

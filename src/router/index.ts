@@ -2,6 +2,10 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import { useAuthStore } from '../stores/auth';
 
+// Rutas marcadas con meta.roles solo las pueden abrir esos roles.
+// Las que no tienen meta.roles quedan abiertas a cualquier usuario autenticado.
+const SOLO_ADMIN = { roles: ['ADMIN'] };
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -13,52 +17,61 @@ const router = createRouter({
     {
       path: '/almacen',
       name: 'almacen',
-      component: () => import('../views/AlmacenView.vue')
+      component: () => import('../views/AlmacenView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/reportes',
       name: 'reportes',
-      component: () => import('../views/ReportesView.vue')
+      component: () => import('../views/ReportesView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/ingenieria',
       name: 'ingenieria',
-      component: () => import('../views/IngenieriaView.vue')
+      component: () => import('../views/IngenieriaView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/produccion',
       name: 'produccion',
-      component: () => import('../views/ProduccionView.vue')
+      component: () => import('../views/ProduccionView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/despachos',
       name: 'despachos',
-      component: () => import('../views/DespachosView.vue')
+      component: () => import('../views/DespachosView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/talleres',
       name: 'talleres',
-      component: () => import('../views/TalleresView.vue')  
+      component: () => import('../views/TalleresView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/productos',
       name: 'productos',
-      component: () => import('../views/ProductosView.vue')
+      component: () => import('../views/ProductosView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/control-ordenes',
       name: 'control-ordenes',
-      component: () => import('../views/ControlOrdenesView.vue')
+      component: () => import('../views/ControlOrdenesView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/almacen-terminados',
       name: 'almacen-terminados',
-      component: () => import('../views/AlmacenTerminadosView.vue') 
+      component: () => import('../views/AlmacenTerminadosView.vue')
     },
     {
       path: '/traslados',
       name: 'traslados',
-      component: () => import('../views/TrasladosView.vue')
+      component: () => import('../views/TrasladosView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/punto-venta',
@@ -70,37 +83,52 @@ const router = createRouter({
       path: '/escaner',
       name: 'escaner-movil',
       component: () => import('../views/EscanerMovil.vue'),
-      meta: { 
+      meta: {
         hideLayout: true // Propiedad para ocultar el menú de navegación en el celular
       }
     },
     {
       path: '/config-colores',
       name: 'config-colores',
-      component: () => import('../views/ColoresView.vue')
+      component: () => import('../views/ColoresView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/liquidaciones',
       name: 'Liquidaciones',
       component: () => import('../views/LiquidacionesView.vue'),
-      meta: { title: 'Liquidación de Costos' }
+      meta: { title: 'Liquidación de Costos', roles: ['ADMIN'] }
     },
     {
       path: '/produccion/nueva-orden',
       name: 'NuevaOrdenCorte',
-      component: () => import('../views/OrdenCorteView.vue')
+      component: () => import('../views/OrdenCorteView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/cobranzas',
       name: 'cobranzas',
       component: () => import('../views/CobranzasView.vue')
-    }, 
+    },
     {
       path: '/compras',
       name: 'Compras',
-      component: () => import('../views/ComprasView.vue')
+      component: () => import('../views/ComprasView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
+      path: '/usuarios',
+      name: 'usuarios',
+      component: () => import('../views/UsuariosView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
+      path: '/recepcion',
+      name: 'recepcion',
+      component: () => import('../views/RecepcionView.vue'),
+      meta: SOLO_ADMIN
     }
-    
+
   ],
 })
 
@@ -108,13 +136,19 @@ router.addRoute({ path: '/login', name: 'login', component: () => import('../vie
 
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore();
-  
-  // Si la ruta no es login y no está autenticado, lo mandamos al login
+
+  // 1. Si la ruta no es login y no está autenticado, lo mandamos al login
   if (to.name !== 'login' && !authStore.estaAutenticado) {
-    next({ name: 'login' });
-  } else {
-    next();
+    return next({ name: 'login' });
   }
+
+  // 2. Si la ruta exige roles y el usuario no lo tiene, lo mandamos al inicio
+  const rolesPermitidos = to.meta.roles as string[] | undefined;
+  if (rolesPermitidos && !rolesPermitidos.includes(authStore.rol)) {
+    return next({ name: 'home' });
+  }
+
+  next();
 });
 
 export default router
