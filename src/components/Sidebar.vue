@@ -2,10 +2,12 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRouter, useRoute } from 'vue-router' // 🔥 Agregamos useRoute
 import { useAuthStore } from '../stores/auth'
+import { useUiStore } from '../stores/ui'
 
 const router = useRouter()
 const route = useRoute() // 🔥 Instanciamos useRoute para leer la ruta actual
 const authStore = useAuthStore()
+const ui = useUiStore() // colapsar/mostrar sidebar en escritorio
 
 // Estado del menú móvil (drawer). En escritorio el menú siempre está visible.
 const menuAbierto = ref(false)
@@ -63,6 +65,16 @@ const cerrarSesion = () => {
       ☰
     </button>
 
+    <!-- Botón flotante para REABRIR el sidebar en escritorio (cuando está colapsado) -->
+    <button
+      v-if="ui.sidebarColapsado"
+      @click="ui.setColapsado(false)"
+      class="hidden md:flex fixed top-4 left-4 z-50 bg-gray-900 text-white w-11 h-11 rounded-lg shadow-lg items-center justify-center text-xl hover:bg-gray-800"
+      aria-label="Mostrar menú"
+    >
+      ☰
+    </button>
+
     <!-- Fondo oscuro detrás del drawer (solo móvil, al abrir) -->
     <div
       v-if="menuAbierto"
@@ -72,19 +84,30 @@ const cerrarSesion = () => {
 
   <aside
     class="w-64 bg-gray-900 text-white flex flex-col shadow-2xl h-screen
-           fixed top-0 left-0 z-50 transition-transform duration-300
-           md:static md:translate-x-0"
-    :class="menuAbierto ? 'translate-x-0' : '-translate-x-full'"
+           fixed top-0 left-0 z-50 transition-transform duration-300 md:static"
+    :class="[
+      menuAbierto ? 'translate-x-0' : '-translate-x-full',
+      ui.sidebarColapsado ? 'md:hidden' : 'md:translate-x-0'
+    ]"
   >
     <div class="h-20 flex items-center justify-center border-b border-gray-800 shrink-0 relative">
       <h1 class="text-2xl font-bold tracking-widest text-blue-400">MODITEX</h1>
-      <!-- Botón cerrar (solo móvil) -->
+      <!-- Botón cerrar (móvil) -->
       <button
         @click="menuAbierto = false"
         class="md:hidden absolute right-4 text-gray-400 hover:text-white text-2xl leading-none"
         aria-label="Cerrar menú"
       >
         &times;
+      </button>
+      <!-- Botón colapsar (escritorio) -->
+      <button
+        @click="ui.setColapsado(true)"
+        class="hidden md:flex absolute right-4 text-gray-400 hover:text-white text-xl leading-none"
+        aria-label="Ocultar menú"
+        title="Ocultar menú"
+      >
+        «
       </button>
     </div>
 
