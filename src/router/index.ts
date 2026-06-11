@@ -127,6 +127,54 @@ const router = createRouter({
       name: 'recepcion',
       component: () => import('../views/RecepcionView.vue'),
       meta: SOLO_ADMIN
+    },
+    {
+      path: '/web/productos',
+      name: 'web-productos',
+      component: () => import('../views/web/WebProductosView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
+      path: '/web/portada',
+      name: 'web-portada',
+      component: () => import('../views/web/WebPortadaView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
+      path: '/web/pedidos',
+      name: 'web-pedidos',
+      component: () => import('../views/web/WebPedidosView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
+      path: '/web/publicaciones',
+      name: 'web-publicaciones',
+      component: () => import('../views/web/WebPublicacionesView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
+      path: '/web/resenas',
+      name: 'web-resenas',
+      component: () => import('../views/web/WebResenasView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
+      path: '/web/ajustes',
+      name: 'web-ajustes',
+      component: () => import('../views/web/WebAjustesView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
+      path: '/web/reclamaciones',
+      name: 'web-reclamaciones',
+      component: () => import('../views/web/WebReclamacionesView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
+      path: '/web/cupones',
+      name: 'web-cupones',
+      component: () => import('../views/web/WebCuponesView.vue'),
+      meta: SOLO_ADMIN
     }
 
   ],

@@ -15,34 +15,50 @@ const menuAbierto = ref(false)
 // Cada vez que cambia la ruta, cerramos el drawer en móvil
 watch(() => route.path, () => { menuAbierto.value = false })
 
-// Cada ítem declara qué roles pueden verlo.
+// Cada ítem declara qué roles pueden verlo y a qué sección pertenece.
+// seccion 'produccion' = ERP; seccion 'web' = gestión de la tienda online.
 // VENDEDOR ve solo lo operativo de venta; ADMIN ve todo.
 const TODOS = ['ADMIN', 'VENDEDOR'];
 const menuItems = [
-  { name: 'Dashboard', path: '/', icon: '📊', roles: TODOS },
-  { name: 'Almacén', path: '/almacen', icon: '📦', roles: ['ADMIN'] },
-  { name: 'Ingeniería', path: '/ingenieria', icon: '📐', roles: ['ADMIN'] },
-  { name: 'Producción', path: '/produccion', icon: '🏭', roles: ['ADMIN'] },
-  { name: 'Recepción Taller', path: '/recepcion', icon: '📥', roles: ['ADMIN'] },
-  { name: 'Despachos', path: '/despachos', icon: '🚚', roles: ['ADMIN'] },
-  { name: 'Talleres', path: '/talleres', icon: '🧵', roles: ['ADMIN'] },
-  { name: 'Productos', path: '/productos', icon: '👕', roles: ['ADMIN'] },
-  { name: 'Control de Ordenes', path: '/control-ordenes', icon: '📋', roles: ['ADMIN'] },
-  { name: 'Compras', path: '/compras', icon: '🛒', roles: ['ADMIN'] },
-  { name: 'Liquidaciones', path: '/liquidaciones', icon: '💰', roles: ['ADMIN'] },
-  { name: 'Almacen de terminados', path: '/almacen-terminados', icon: '🏬', roles: TODOS },
-  { name: 'Traslados', path: '/traslados', icon: '🔄', roles: ['ADMIN'] },
-  { name: 'Punto de Venta', path: '/punto-venta', icon: '🛒', roles: TODOS },
-  { name: 'Config. Colores', path: '/config-colores', icon: '🎨', roles: ['ADMIN'] },
-  { name: 'Reportes', path: '/reportes', icon: '📈', roles: ['ADMIN'] },
-  { name: 'Cobranzas', path: '/cobranzas', icon: '💳', roles: TODOS },
-  { name: 'Usuarios', path: '/usuarios', icon: '👥', roles: ['ADMIN'] },
+  // --- PRODUCCIÓN (ERP) ---
+  { name: 'Dashboard', path: '/', icon: '📊', roles: TODOS, seccion: 'produccion' },
+  { name: 'Almacén', path: '/almacen', icon: '📦', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Ingeniería', path: '/ingenieria', icon: '📐', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Producción', path: '/produccion', icon: '🏭', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Recepción Taller', path: '/recepcion', icon: '📥', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Despachos', path: '/despachos', icon: '🚚', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Talleres', path: '/talleres', icon: '🧵', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Productos', path: '/productos', icon: '👕', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Control de Ordenes', path: '/control-ordenes', icon: '📋', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Compras', path: '/compras', icon: '🛒', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Liquidaciones', path: '/liquidaciones', icon: '💰', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Almacen de terminados', path: '/almacen-terminados', icon: '🏬', roles: TODOS, seccion: 'produccion' },
+  { name: 'Traslados', path: '/traslados', icon: '🔄', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Punto de Venta', path: '/punto-venta', icon: '🛒', roles: TODOS, seccion: 'produccion' },
+  { name: 'Config. Colores', path: '/config-colores', icon: '🎨', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Reportes', path: '/reportes', icon: '📈', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Cobranzas', path: '/cobranzas', icon: '💳', roles: TODOS, seccion: 'produccion' },
+  { name: 'Usuarios', path: '/usuarios', icon: '👥', roles: ['ADMIN'], seccion: 'produccion' },
+  // --- TIENDA WEB ---
+  { name: 'Productos Web', path: '/web/productos', icon: '🛍️', roles: ['ADMIN'], seccion: 'web' },
+  { name: 'Pedidos Web', path: '/web/pedidos', icon: '📦', roles: ['ADMIN'], seccion: 'web' },
+  { name: 'Portada / Carrusel', path: '/web/portada', icon: '🖼️', roles: ['ADMIN'], seccion: 'web' },
+  { name: 'Publicaciones', path: '/web/publicaciones', icon: '📸', roles: ['ADMIN'], seccion: 'web' },
+  { name: 'Reseñas', path: '/web/resenas', icon: '⭐', roles: ['ADMIN'], seccion: 'web' },
+  { name: 'Códigos Promo', path: '/web/cupones', icon: '🎟️', roles: ['ADMIN'], seccion: 'web' },
+  { name: 'Reclamaciones', path: '/web/reclamaciones', icon: '📕', roles: ['ADMIN'], seccion: 'web' },
+  { name: 'Ajustes Web', path: '/web/ajustes', icon: '⚙️', roles: ['ADMIN'], seccion: 'web' },
 ]
 
-// Solo mostramos los ítems permitidos para el rol del usuario logueado
+// Mostramos solo los ítems del modo actual y permitidos para el rol
 const menuVisible = computed(() =>
-  menuItems.filter((item) => item.roles.includes(authStore.rol))
+  menuItems.filter(
+    (item) => item.roles.includes(authStore.rol) && item.seccion === ui.modo,
+  ),
 )
+
+// El switch de modo Web solo lo ve el ADMIN
+const puedeVerWeb = computed(() => authStore.rol === 'ADMIN')
 
 // Inicial para el avatar
 const inicial = computed(() => (authStore.nombre || 'U').charAt(0).toUpperCase())
@@ -109,6 +125,22 @@ const cerrarSesion = () => {
       >
         «
       </button>
+    </div>
+
+    <!-- SWITCH Producción ⇄ Web (solo ADMIN) -->
+    <div v-if="puedeVerWeb" class="px-4 pt-4 shrink-0">
+      <div class="grid grid-cols-2 gap-1 bg-gray-800 rounded-xl p-1">
+        <button
+          @click="ui.setModo('produccion')"
+          class="py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all"
+          :class="ui.modo === 'produccion' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'"
+        >🏭 Producción</button>
+        <button
+          @click="ui.setModo('web')"
+          class="py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all"
+          :class="ui.modo === 'web' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'"
+        >🌐 Web</button>
+      </div>
     </div>
 
     <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">

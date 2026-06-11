@@ -15,5 +15,15 @@ export const useUiStore = defineStore('ui', () => {
     setColapsado(!sidebarColapsado.value);
   }
 
-  return { sidebarColapsado, setColapsado, toggle };
+  // Modo de la aplicación: 'produccion' (ERP) o 'web' (gestión de la tienda online)
+  const modo = ref<'produccion' | 'web'>(
+    (localStorage.getItem('modoApp') as 'produccion' | 'web') || 'produccion',
+  );
+
+  function setModo(m: 'produccion' | 'web') {
+    modo.value = m;
+    localStorage.setItem('modoApp', m);
+  }
+
+  return { sidebarColapsado, setColapsado, toggle, modo, setModo };
 });
