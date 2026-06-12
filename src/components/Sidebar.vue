@@ -26,6 +26,7 @@ const menuItems = [
   { name: 'Ingeniería', path: '/ingenieria', icon: '📐', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Producción', path: '/produccion', icon: '🏭', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Recepción Taller', path: '/recepcion', icon: '📥', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Etiquetas', path: '/etiquetas', icon: '🏷️', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Despachos', path: '/despachos', icon: '🚚', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Talleres', path: '/talleres', icon: '🧵', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Productos', path: '/productos', icon: '👕', roles: ['ADMIN'], seccion: 'produccion' },

@@ -129,6 +129,12 @@ const router = createRouter({
       meta: SOLO_ADMIN
     },
     {
+      path: '/etiquetas',
+      name: 'etiquetas',
+      component: () => import('../views/EtiquetasView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
       path: '/web/productos',
       name: 'web-productos',
       component: () => import('../views/web/WebProductosView.vue'),
