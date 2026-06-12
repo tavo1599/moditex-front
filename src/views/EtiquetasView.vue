@@ -8,10 +8,7 @@ const colores = ref<any[]>([]);
 const cargando = ref(true);
 const marca = ref('WEST');
 
-// Línea que se está armando
 const form = ref({ productoId: '', color: '', talla: '', precio: '', cantidad: 50 });
-
-// Carrito de etiquetas
 const carrito = ref<any[]>([]);
 
 const cargar = async () => {
@@ -28,10 +25,12 @@ const codigoColor = (nombreOCodigo: string) => {
   const c = colores.value.find((x) => x.codigo === nombreOCodigo || x.nombre === nombreOCodigo);
   return (c ? c.codigo : String(nombreOCodigo).substring(0, 3)).toUpperCase();
 };
+
 const nombreColor = (val: string) => {
   const c = colores.value.find((x) => x.codigo === val || x.nombre === val);
   return c ? c.nombre : val;
 };
+
 const nombreProducto = (id: any) => productos.value.find((p) => p.id === Number(id))?.nombre || '';
 
 const agregar = () => {
@@ -55,7 +54,7 @@ const agregar = () => {
     cantidad: cant,
     sku,
   });
-  // Mantener producto y precio para agregar rápido otra talla/color
+  
   form.value.color = '';
   form.value.talla = '';
 };
@@ -65,7 +64,8 @@ const limpiar = () => { carrito.value = []; };
 
 const totalEtiquetas = computed(() => carrito.value.reduce((s, l) => s + l.cantidad, 0));
 
-// Genera la imagen del código de barras (dataURL) para un SKU
+// CÓDIGO DE BARRAS como imagen PNG (canvas), a su resolución natural y SIN estirar.
+// Esta es la forma que SÍ lee la lectora (horizontal, sin rotar, aspecto intacto).
 const barcodeDataUrl = (sku: string): string => {
   const canvas = document.createElement('canvas');
   JsBarcode(canvas, sku, { format: 'CODE128', width: 2, height: 55, displayValue: false, margin: 2 });
@@ -85,9 +85,9 @@ const imprimir = () => {
   }
 
   let cuerpo = '';
-  for (let i = 0; i < etiquetas.length; i += 2) {
+  for (let i = 0; i < etiquetas.length; i += 3) {
     cuerpo += '<div class="fila">';
-    for (let j = 0; j < 2; j++) {
+    for (let j = 0; j < 3; j++) {
       const e = etiquetas[i + j];
       if (e) {
         cuerpo += `
@@ -95,7 +95,7 @@ const imprimir = () => {
             ${e.precio != null ? `<div class="precio">PRECIO S/ ${e.precio.toFixed(2)}</div>` : ''}
             <div class="marca">${marca.value}</div>
             <div class="tipo-prenda">${e.nombreProducto}</div>
-            <div class="svg-container"><img src="${e.img}" style="max-width:44mm;height:auto;"></div>
+            <div class="svg-container"><img src="${e.img}" style="width:29mm;height:auto;"></div>
             <div class="sku-lectura">${e.sku}</div>
             <div class="footer-etiqueta">
               <span class="talla-gigante">${e.talla}</span>
@@ -111,24 +111,22 @@ const imprimir = () => {
 
   const html = `
     <html><head><title>Etiquetas</title><style>
-      @page { size: 101.6mm 38.1mm; margin: 0 !important; }
+      /* Rollo: papel 100mm (10cm), 3 etiquetas de 30mm (3cm) c/u */
+      @page { size: 100mm 40mm; margin: 0 !important; }
       * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; width: 101.6mm; background: #fff; font-family: Arial, sans-serif; }
-      .fila { display: flex; flex-direction: row; width: 101.6mm; height: 37mm; justify-content: space-between; align-items: center; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
-      .etiqueta { width: 50.8mm; height: 37mm; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; overflow: hidden; padding-top: 1mm; }
-      .etiqueta:nth-child(odd) { padding-right: 2mm; padding-left: 1mm; }
-      .etiqueta:nth-child(even) { padding-left: 2mm; padding-right: 1mm; }
-      .precio { font-size: 10px; font-weight: 900; margin-bottom: 1px; line-height: 1; }
-      .marca { font-size: 16px; font-weight: 900; letter-spacing: 1px; margin-bottom: 2px; text-transform: uppercase; line-height: 1; }
-      .tipo-prenda { font-size: 8px; font-weight: bold; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
-      .svg-container { width: 100%; display: flex; justify-content: center; margin: 2px 0; }
-      .sku-lectura { font-family: monospace; font-size: 8px; font-weight: bold; margin-bottom: 2px; line-height: 1; }
-      .footer-etiqueta { display: flex; justify-content: space-between; align-items: baseline; width: 95%; border-top: 1px dashed #000; padding-top: 3px; margin-top: 1px; }
-      .talla-gigante { font-size: 22px; font-weight: 900; line-height: 0.8; }
+      html, body { margin: 0; padding: 0; width: 100mm; background: #fff; font-family: Arial, sans-serif; }
+      .fila { display: flex; flex-direction: row; width: 100mm; height: 40mm; justify-content: space-around; align-items: center; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
+      .etiqueta { width: 30mm; height: 40mm; display: flex; flex-direction: column; align-items: center; justify-content: space-between; overflow: hidden; padding: 1.8mm 1mm; }
+      .precio { font-size: 10px; font-weight: 900; line-height: 1; }
+      .marca { font-size: 15px; font-weight: 900; letter-spacing: 0.6px; text-transform: uppercase; line-height: 1; }
+      .tipo-prenda { font-size: 8px; font-weight: bold; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .svg-container { width: 100%; display: flex; justify-content: center; }
+      .sku-lectura { font-family: monospace; font-size: 8px; font-weight: bold; line-height: 1; }
+      .footer-etiqueta { display: flex; justify-content: space-between; align-items: baseline; width: 100%; border-top: 1px dashed #000; padding-top: 3px; }
+      .talla-gigante { font-size: 20px; font-weight: 900; line-height: 0.8; }
       .color-texto { font-size: 9px; font-weight: bold; text-transform: uppercase; }
     </style></head><body>${cuerpo}</body></html>`;
 
-  // Impresión por iframe (funciona en tablet/celular y PC)
   try {
     const iframe = document.createElement('iframe');
     Object.assign(iframe.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
@@ -156,11 +154,10 @@ onMounted(cargar);
   <div class="space-y-6">
     <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
       <h2 class="text-3xl font-bold text-gray-800">🏷️ Impresión de Etiquetas</h2>
-      <p class="text-gray-500 mt-1">Arma un lote de etiquetas (talla, color, precio, cantidad) e imprime todas con su código de barras.</p>
+      <p class="text-gray-500 mt-1">Arma un lote de etiquetas (talla, color, precio, cantidad) e imprime todas con su código de barras. Papel 100mm (10cm), 3 etiquetas de 30mm por fila.</p>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <!-- Formulario -->
       <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4 h-fit">
         <h3 class="font-bold text-gray-700">Agregar al lote</h3>
         <div>
@@ -204,7 +201,6 @@ onMounted(cargar);
         </div>
       </div>
 
-      <!-- Carrito -->
       <div class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
         <div class="p-4 border-b border-gray-100 flex justify-between items-center">
           <h3 class="font-bold text-gray-700">Lote de etiquetas</h3>
