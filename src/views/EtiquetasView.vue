@@ -117,14 +117,14 @@ const imprimir = () => {
       html, body { margin: 0; padding: 0; width: 100mm; background: #fff; font-family: Arial, sans-serif; }
       .fila { display: flex; flex-direction: row; width: 100mm; height: 40mm; justify-content: space-around; align-items: center; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
       .etiqueta { width: 30mm; height: 40mm; display: flex; flex-direction: column; align-items: center; justify-content: space-between; overflow: hidden; padding: 1.8mm 1mm; }
-      .precio { font-size: 10px; font-weight: 900; line-height: 1; }
-      .marca { font-size: 15px; font-weight: 900; letter-spacing: 0.6px; text-transform: uppercase; line-height: 1; }
-      .tipo-prenda { font-size: 8px; font-weight: bold; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .precio { font-size: 10px; font-weight: 600; line-height: 1; }
+      .marca { font-size: 15px; font-weight: 900; letter-spacing: 0.6px; text-transform: uppercase; line-height: 1; -webkit-text-stroke: 0.3px #000; }
+      .tipo-prenda { font-size: 8px; font-weight: 500; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .svg-container { width: 100%; display: flex; justify-content: center; }
-      .sku-lectura { font-family: monospace; font-size: 8px; font-weight: bold; line-height: 1; }
+      .sku-lectura { font-family: monospace; font-size: 8px; font-weight: 500; line-height: 1; }
       .footer-etiqueta { display: flex; justify-content: space-between; align-items: baseline; width: 100%; border-top: 1px dashed #000; padding-top: 3px; }
       .talla-gigante { font-size: 20px; font-weight: 900; line-height: 0.8; }
-      .color-texto { font-size: 9px; font-weight: bold; text-transform: uppercase; }
+      .color-texto { font-size: 9px; font-weight: 900; text-transform: uppercase; -webkit-text-stroke: 0.2px #000; }
     </style></head><body>${cuerpo}</body></html>`;
 
   try {
