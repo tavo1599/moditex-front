@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue';
 import api from '../../api/axios';
 
-const API = (import.meta as any).env.VITE_API_URL || 'http://localhost:3000';
+import { imagenUrl } from '../../utils/imagen';
 
 const slides = ref<any[]>([]);
 const cargando = ref(true);
@@ -113,8 +113,8 @@ onMounted(cargar);
     <div v-else-if="slides.length" class="grid grid-cols-1 md:grid-cols-2 gap-5">
       <div v-for="s in slides" :key="s.id" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" :class="{ 'opacity-50': !s.activo }">
         <div class="aspect-video bg-gray-100 relative">
-          <video v-if="s.tipo === 'video'" :src="`${API}${s.url}`" class="w-full h-full object-cover" muted loop autoplay playsinline></video>
-          <img v-else :src="`${API}${s.url}`" class="w-full h-full object-cover">
+          <video v-if="s.tipo === 'video'" :src="imagenUrl(s.url)" class="w-full h-full object-cover" muted loop autoplay playsinline></video>
+          <img v-else :src="imagenUrl(s.url)" class="w-full h-full object-cover">
           <span class="absolute top-2 left-2 bg-black/70 text-white text-[9px] px-2 py-0.5 rounded uppercase tracking-wider">{{ s.tipo }}</span>
         </div>
         <div class="p-4 space-y-3">

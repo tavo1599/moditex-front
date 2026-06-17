@@ -50,6 +50,41 @@ const matrizCantidades = ref<MatrizPlana>({}); // AHORA ES GLOBAL: "productoId|c
 const bufferEscaner = ref('');
 let timeoutEscaner: ReturnType<typeof setTimeout> | null = null;
 const ultimoEscaneado = ref('');
+const errorEscaneo = ref(''); // aviso de error NO bloqueante (no se cierra solo con el Enter del escáner)
+let timeoutError: ReturnType<typeof setTimeout> | null = null;
+
+// --- SONIDO (beep generado, sin archivos) ---
+// Suena distinto si el escaneo PASA (agudo corto) o NO PASA (grave doble = error),
+// para que se note cuando una prenda no se registró sin mirar la pantalla.
+let audioCtx: AudioContext | null = null;
+const tono = (freq: number, dur: number, tipo: OscillatorType = 'square', vol = 0.18) => {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = tipo;
+    osc.frequency.value = freq;
+    gain.gain.value = vol;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + dur);
+  } catch { /* sin audio disponible */ }
+};
+const sonidoOk = () => tono(900, 0.07, 'square', 0.12);
+const sonidoError = () => {
+  tono(190, 0.22, 'sawtooth', 0.3);
+  setTimeout(() => tono(140, 0.28, 'sawtooth', 0.3), 150);
+};
+
+// Muestra el error en pantalla (rojo) + suena, sin bloquear el escaneo
+const fallarEscaneo = (mensaje: string) => {
+  sonidoError();
+  errorEscaneo.value = mensaje;
+  if (timeoutError) clearTimeout(timeoutError);
+  timeoutError = setTimeout(() => (errorEscaneo.value = ''), 5000);
+};
 
 // --- INTEGRACIÓN DEL COMPOSABLE DEL ESCÁNER MÓVIL ---
 const codigoEscaneadoRef = ref('');
@@ -115,20 +150,44 @@ const manejarEscaneo = (e: KeyboardEvent) => {
   }, 100); 
 };
 
+// Normaliza para comparar sin tropiezos por mayúsculas, espacios o acentos
+const norm = (s: any) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
 const procesarCodigo = (codigoEscaneado: string) => {
   if (!form.value.origenId) {
     return alert('⚠️ Selecciona primero la Bodega de Origen para comenzar a escanear.');
   }
 
-  const codigoLimpio = codigoEscaneado.trim().toUpperCase().replace(/'/g, '-');
+  const codigoLimpio = norm(codigoEscaneado).replace(/'/g, '-');
+  const enOrigen = inventarioConSKU.value.filter((inv: any) => inv.bodegaId === Number(form.value.origenId));
 
-  const itemEncontrado = inventarioConSKU.value.find(
-    (inv: any) => inv.bodegaId === Number(form.value.origenId) && 
-    (inv.skuCalculado === codigoLimpio || inv.skuBarras === codigoLimpio || inv.producto.skuBase === codigoLimpio)
+  // 1) Coincidencia exacta por SKU calculado / código de barras / SKU base (normalizados)
+  let itemEncontrado = enOrigen.find((inv: any) =>
+    norm(inv.skuCalculado) === codigoLimpio ||
+    norm(inv.skuBarras) === codigoLimpio ||
+    norm(inv.producto?.skuBase) === codigoLimpio,
   );
 
+  // 2) Fallback estructural PRD<id>-<color>-<talla>: tolera que el color esté guardado
+  //    como código, nombre o solo sus 3 primeras letras (origen real del bug en negros, etc.)
   if (!itemEncontrado) {
-    return alert(`❌ El código ${codigoEscaneado} no se encuentra en esta bodega o está agotado.`);
+    const m = codigoLimpio.match(/^PRD(\d+)-(.+)-([^-]+)$/);
+    if (m) {
+      const idProd = Number(m[1]);
+      const colorTok = m[2];
+      const tallaTok = m[3];
+      itemEncontrado = enOrigen.find((inv: any) => {
+        if (Number(inv.productoId ?? inv.producto?.id) !== idProd) return false;
+        if (norm(inv.talla) !== tallaTok) return false;
+        const cNom = norm(inv.color);
+        const cCod = norm(inv.colorCodigo);
+        return cCod === colorTok || cNom === colorTok || cNom.slice(0, 3) === colorTok || cCod.slice(0, 3) === colorTok;
+      });
+    }
+  }
+
+  if (!itemEncontrado) {
+    return fallarEscaneo(`❌ ${codigoEscaneado}: no está en esta bodega.`);
   }
 
   // Llave global única para multiproducto
@@ -136,12 +195,13 @@ const procesarCodigo = (codigoEscaneado: string) => {
   const cantidadActual = matrizCantidades.value[llaveGlobal] || 0;
 
   if (cantidadActual + 1 > itemEncontrado.stock) {
-    return alert(`⚠️ Cuidado: No hay suficiente stock disponible para ${itemEncontrado.color} - Talla ${itemEncontrado.talla}.`);
-  } 
+    return fallarEscaneo(`⚠️ Sin stock suficiente: ${itemEncontrado.color} · Talla ${itemEncontrado.talla} (máx ${itemEncontrado.stock}).`);
+  }
 
   matrizCantidades.value[llaveGlobal] = cantidadActual + 1;
+  sonidoOk();
   ultimoEscaneado.value = `+1 ${itemEncontrado.producto.nombre} (${itemEncontrado.color} - ${itemEncontrado.talla})`;
-  
+
   // Si escanea algo diferente, cambiamos la vista pero SIN borrar lo anterior
   if (form.value.productoPadreId !== itemEncontrado.productoId.toString()) {
     form.value.productoPadreId = itemEncontrado.productoId.toString();
@@ -172,12 +232,13 @@ const cargarDatos = async () => {
 
 const inventarioConSKU = computed(() => {
   return inventarioTotal.value.map(item => {
-    const colorObj = colores.value.find(c => c.codigo === item.color || c.nombre === item.color);
+    const colorObj = colores.value.find(c => norm(c.codigo) === norm(item.color) || norm(c.nombre) === norm(item.color));
     const codigoColor = colorObj ? colorObj.codigo : String(item.color).substring(0, 3).toUpperCase();
     const idProd = item.productoId || item.producto?.id;
-    return { 
-      ...item, 
-      skuCalculado: `PRD${idProd}-${codigoColor}-${item.talla}`.toUpperCase() 
+    return {
+      ...item,
+      colorCodigo: codigoColor,
+      skuCalculado: `PRD${idProd}-${codigoColor}-${item.talla}`.toUpperCase()
     };
   });
 });
@@ -523,6 +584,13 @@ onUnmounted(() => {
            <div v-if="ultimoEscaneado" class="text-emerald-400 font-black text-sm animate-pulse tracking-wide bg-black/30 px-3 py-1 rounded-lg">
              {{ ultimoEscaneado }}
            </div>
+        </div>
+
+        <!-- AVISO DE ERROR DE ESCANEO (no bloqueante: suena + se ve en rojo) -->
+        <div v-if="errorEscaneo" class="mb-4 flex items-center gap-3 bg-red-500/15 border border-red-500/40 text-red-300 px-4 py-3 rounded-xl animate-pulse">
+          <span class="text-xl">🔊</span>
+          <span class="font-bold text-sm flex-1">{{ errorEscaneo }}</span>
+          <button @click="errorEscaneo = ''" class="text-red-300/70 hover:text-red-200 text-lg leading-none">&times;</button>
         </div>
 
         <div v-if="form.origenId" class="mb-6 bg-gray-800 rounded-2xl border border-gray-700 flex flex-col overflow-hidden">

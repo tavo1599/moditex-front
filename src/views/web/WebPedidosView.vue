@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import api from '../../api/axios';
 
-const API = (import.meta as any).env.VITE_API_URL || 'http://localhost:3000';
+import { imagenUrl } from '../../utils/imagen';
 const pedidos = ref<any[]>([]);
 const bodegas = ref<any[]>([]);
 const cargando = ref(true);
@@ -135,12 +135,12 @@ onMounted(cargar);
 
         <!-- Voucher de pago -->
         <div v-if="p.voucherUrl" class="mt-3 flex items-center gap-3 bg-emerald-50 border border-emerald-100 rounded-lg p-3">
-          <a :href="`${API}${p.voucherUrl}`" target="_blank">
-            <img :src="`${API}${p.voucherUrl}`" class="w-16 h-16 object-cover rounded-lg border border-emerald-200 hover:scale-105 transition" />
+          <a :href="imagenUrl(p.voucherUrl)" target="_blank">
+            <img :src="imagenUrl(p.voucherUrl)" class="w-16 h-16 object-cover rounded-lg border border-emerald-200 hover:scale-105 transition" />
           </a>
           <div>
             <p class="text-xs font-bold text-emerald-700 uppercase tracking-wider">Comprobante de pago</p>
-            <a :href="`${API}${p.voucherUrl}`" target="_blank" class="text-xs text-emerald-600 underline">Ver en grande</a>
+            <a :href="imagenUrl(p.voucherUrl)" target="_blank" class="text-xs text-emerald-600 underline">Ver en grande</a>
           </div>
         </div>
         <p v-else class="mt-3 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg p-2 inline-block">⚠️ Sin comprobante adjunto</p>

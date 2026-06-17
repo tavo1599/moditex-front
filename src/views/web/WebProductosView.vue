@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import api from '../../api/axios';
 
-const API = (import.meta as any).env.VITE_API_URL || 'http://localhost:3000';
+import { imagenUrl } from '../../utils/imagen';
 
 const productos = ref<any[]>([]);
 const colores = ref<any[]>([]);
@@ -230,7 +230,7 @@ onMounted(cargar);
           <!-- Galería actual -->
           <div v-if="galeria.length" class="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div v-for="img in galeria" :key="img.id" class="relative group border border-gray-200 rounded-lg overflow-hidden">
-              <img :src="`${API}${img.url}`" class="w-full aspect-[3/4] object-cover">
+              <img :src="imagenUrl(img.url)" class="w-full aspect-[3/4] object-cover">
               <div class="absolute top-1 left-1 bg-black/70 text-white text-[9px] px-2 py-0.5 rounded uppercase tracking-wider">
                 {{ img.color || 'Portada' }}
               </div>

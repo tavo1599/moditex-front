@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue';
 import api from '../../api/axios';
 
-const API = (import.meta as any).env.VITE_API_URL || 'http://localhost:3000';
+import { imagenUrl } from '../../utils/imagen';
 
 // ===== CONFIG (whatsapp / contacto) =====
 const config = ref<any>({ whatsapp: '', instagram: '', facebook: '', email: '', direccion: '', horario: '', yape: '', plin: '', cuentaBanco: '', titularCuenta: '', razonSocial: '', ruc: '', logo: '' });
@@ -87,7 +87,7 @@ onMounted(async () => { await Promise.all([cargarConfig(), cargarBanners()]); })
           <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Logo de la tienda</label>
           <div class="flex items-center gap-4">
             <div class="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden border border-gray-200">
-              <img v-if="config.logo" :src="`${API}${config.logo}`" class="max-w-full max-h-full object-contain" />
+              <img v-if="config.logo" :src="imagenUrl(config.logo)" class="max-w-full max-h-full object-contain" />
               <span v-else class="text-[10px] text-gray-400 text-center px-2">Sin logo</span>
             </div>
             <div>
@@ -198,7 +198,7 @@ onMounted(async () => { await Promise.all([cargarConfig(), cargarBanners()]); })
 
       <div v-if="banners.length" class="mt-6 space-y-4">
         <div v-for="b in banners" :key="b.id" class="border border-gray-100 rounded-xl overflow-hidden" :class="{ 'opacity-50': !b.activo }">
-          <img :src="`${API}${b.url}`" class="w-full h-40 object-cover">
+          <img :src="imagenUrl(b.url)" class="w-full h-40 object-cover">
           <div class="p-3 grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
             <input v-model="b.titulo" placeholder="Título" class="border border-gray-200 rounded-lg p-2 text-sm outline-none focus:border-emerald-500">
             <input v-model="b.subtitulo" placeholder="Subtítulo" class="border border-gray-200 rounded-lg p-2 text-sm outline-none focus:border-emerald-500">
