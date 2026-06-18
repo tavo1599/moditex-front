@@ -46,6 +46,13 @@ const coloresDisponibles = ref<string[]>([]);
 const matrizStock = ref<MatrizPlana>({});
 const matrizCantidades = ref<MatrizPlana>({}); // AHORA ES GLOBAL: "productoId|color|talla"
 
+// ¿Esta combinación color+talla ya alcanzó su máximo disponible? (para pintarla de verde)
+const estaCompleto = (color: string, talla: string) => {
+  const max = matrizStock.value[`${color}|${talla}`] || 0;
+  const cant = matrizCantidades.value[`${form.value.productoPadreId}|${color}|${talla}`] || 0;
+  return max > 0 && cant >= max;
+};
+
 // --- ESTADOS DEL ESCÁNER (FÍSICO) ---
 const bufferEscaner = ref('');
 let timeoutEscaner: ReturnType<typeof setTimeout> | null = null;
@@ -661,15 +668,20 @@ onUnmounted(() => {
                     </td>
                     <td v-for="talla in tallasDisponibles" :key="talla" class="p-2">
                       <div v-if="(matrizStock[`${color}|${talla}`] || 0) > 0" class="flex flex-col items-center gap-1">
-                        <input 
-                          type="number" 
-                          v-model.number="matrizCantidades[`${form.productoPadreId}|${color}|${talla}`]" 
+                        <input
+                          type="number"
+                          v-model.number="matrizCantidades[`${form.productoPadreId}|${color}|${talla}`]"
                           @change="sincronizarMatrizAlCelular"
-                          min="0" 
+                          min="0"
                           :max="matrizStock[`${color}|${talla}`]"
-                          class="w-16 bg-black border border-gray-700 text-center py-1.5 px-1 rounded-lg font-black text-sm text-white outline-none focus:border-blue-500 transition-all hide-arrows" 
+                          class="w-16 text-center py-1.5 px-1 rounded-lg font-black text-sm outline-none transition-all hide-arrows border"
+                          :class="estaCompleto(color, talla)
+                            ? 'bg-emerald-600 border-emerald-400 text-white'
+                            : 'bg-black border-gray-700 text-white focus:border-blue-500'"
                         />
-                        <span class="text-[9px] font-bold text-emerald-400">Disp: {{ matrizStock[`${color}|${talla}`] }}</span>
+                        <span class="text-[9px] font-bold" :class="estaCompleto(color, talla) ? 'text-emerald-300' : 'text-gray-400'">
+                          {{ estaCompleto(color, talla) ? '✓ Completo' : 'Disp: ' + matrizStock[`${color}|${talla}`] }}
+                        </span>
                       </div>
                       <div v-else class="text-gray-600 text-[9px] font-black uppercase py-3 select-none">-</div>
                     </td>
