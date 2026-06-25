@@ -64,10 +64,18 @@ let timeoutError: ReturnType<typeof setTimeout> | null = null;
 // Suena distinto si el escaneo PASA (agudo corto) o NO PASA (grave doble = error),
 // para que se note cuando una prenda no se registró sin mirar la pantalla.
 let audioCtx: AudioContext | null = null;
-const tono = (freq: number, dur: number, tipo: OscillatorType = 'square', vol = 0.18) => {
+// Desbloquea el audio en el primer gesto del usuario (los navegadores no dejan
+// sonar sin interacción). Así el PRIMER pitido ya suena, no recién el segundo.
+const asegurarAudio = () => {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch { /* sin audio disponible */ }
+};
+const tono = (freq: number, dur: number, tipo: OscillatorType = 'square', vol = 0.18) => {
+  try {
+    asegurarAudio();
+    if (!audioCtx) return;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = tipo;
@@ -529,13 +537,24 @@ const registrarTrasladoLote = async () => {
   }
 };
 
+// Al primer clic o tecla en la página, activamos el audio (una sola vez)
+const desbloquearAudioUnaVez = () => {
+  asegurarAudio();
+  window.removeEventListener('pointerdown', desbloquearAudioUnaVez);
+  window.removeEventListener('keydown', desbloquearAudioUnaVez);
+};
+
 onMounted(() => {
   cargarDatos();
   window.addEventListener('keydown', manejarEscaneo);
+  window.addEventListener('pointerdown', desbloquearAudioUnaVez);
+  window.addEventListener('keydown', desbloquearAudioUnaVez);
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', manejarEscaneo);
+  window.removeEventListener('pointerdown', desbloquearAudioUnaVez);
+  window.removeEventListener('keydown', desbloquearAudioUnaVez);
 });
 </script>
 
