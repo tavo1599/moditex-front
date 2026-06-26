@@ -101,19 +101,21 @@ onMounted(async () => { await Promise.all([cargarConfig(), cargarBanners()]); })
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
       <h3 class="font-bold text-gray-700 mb-1">🖼️ Imágenes "Nuestra historia"</h3>
       <p class="text-xs text-gray-400 mb-4">Las 2 fotos que se muestran en la sección "Nuestra historia" de la página de inicio.</p>
-      <div class="grid grid-cols-2 gap-6">
-        <div v-for="slot in [1, 2]" :key="slot">
-          <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Imagen {{ slot }}</label>
-          <div class="aspect-[3/4] bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden border border-gray-200 mb-2">
+      <div class="flex flex-wrap gap-6">
+        <div v-for="slot in [1, 2]" :key="slot" class="flex items-center gap-3">
+          <div class="w-20 h-28 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden border border-gray-200 shrink-0">
             <img
               v-if="config[slot === 2 ? 'historiaImg2' : 'historiaImg1']"
               :src="imagenUrl(config[slot === 2 ? 'historiaImg2' : 'historiaImg1'])"
               class="w-full h-full object-cover"
             />
-            <span v-else class="text-[10px] text-gray-400 text-center px-2">Sin imagen</span>
+            <span v-else class="text-[9px] text-gray-400 text-center px-1">Sin imagen</span>
           </div>
-          <input type="file" accept="image/*" @change="(e) => subirHistoria(slot, e)" class="text-xs">
-          <p v-if="subiendoHistoria === slot" class="text-[11px] text-emerald-600 mt-1">Subiendo...</p>
+          <div>
+            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Imagen {{ slot }}</label>
+            <input type="file" accept="image/*" @change="(e) => subirHistoria(slot, e)" class="text-xs">
+            <p v-if="subiendoHistoria === slot" class="text-[11px] text-emerald-600 mt-1">Subiendo...</p>
+          </div>
         </div>
       </div>
     </div>
