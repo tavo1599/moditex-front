@@ -87,6 +87,7 @@ const guardarProducto = async (p: any) => {
 const modalFotos = ref(false);
 const prodActivo = ref<any>(null);
 const galeria = ref<any[]>([]);
+const coloresProducto = ref<any[]>([]); // solo los colores que la prenda tiene en almacén
 const subiendo = ref(false);
 const formFoto = ref<{ file: File | null; color: string; orden: number }>({ file: null, color: '', orden: 0 });
 
@@ -94,12 +95,17 @@ const abrirFotos = async (p: any) => {
   prodActivo.value = p;
   formFoto.value = { file: null, color: '', orden: 0 };
   modalFotos.value = true;
-  await cargarGaleria();
+  await Promise.all([cargarGaleria(), cargarColoresProducto()]);
 };
 
 const cargarGaleria = async () => {
   const res = await api.get(`/archivos/producto/${prodActivo.value.id}/galeria`);
   galeria.value = res.data;
+};
+
+const cargarColoresProducto = async () => {
+  const res = await api.get(`/archivos/producto/${prodActivo.value.id}/colores`);
+  coloresProducto.value = res.data;
 };
 
 const onFile = (e: Event) => {
@@ -219,8 +225,9 @@ onMounted(cargar);
               <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Color</label>
               <select v-model="formFoto.color" class="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white">
                 <option value="">Portada (general)</option>
-                <option v-for="c in colores" :key="c.id" :value="c.nombre">{{ c.nombre }}</option>
+                <option v-for="c in coloresProducto" :key="c.valor" :value="c.valor">{{ c.nombre }}</option>
               </select>
+              <p v-if="!coloresProducto.length" class="text-[10px] text-amber-600 mt-1">Esta prenda no tiene colores en almacén.</p>
             </div>
             <button @click="subirFoto" :disabled="subiendo" class="bg-emerald-600 text-white px-4 py-2.5 rounded-lg font-bold text-sm hover:bg-emerald-700 disabled:opacity-50">
               {{ subiendo ? 'Subiendo...' : 'Subir' }}
