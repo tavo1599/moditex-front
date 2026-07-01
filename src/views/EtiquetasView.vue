@@ -6,10 +6,19 @@ import JsBarcode from 'jsbarcode';
 const productos = ref<any[]>([]);
 const colores = ref<any[]>([]);
 const cargando = ref(true);
-const marca = ref('WEST');
 
-const form = ref({ productoId: '', color: '', talla: '', precio: '', cantidad: 50 });
-const carrito = ref<any[]>([]);
+// Datos generales (aplican a todas las etiquetas)
+const marca = ref('WEST');
+const productoId = ref('');
+const precioGeneral = ref('');
+
+// Tallas = columnas (editables)
+const tallas = ref<string[]>(['S', 'M', 'L', 'XL', 'XXL']);
+const nuevaTalla = ref('');
+
+// Filas por color: [{ color, cant: { [talla]: number } }]
+const filas = ref<any[]>([]);
+const colorNuevo = ref('');
 
 const cargar = async () => {
   cargando.value = true;
@@ -25,47 +34,40 @@ const codigoColor = (nombreOCodigo: string) => {
   const c = colores.value.find((x) => x.codigo === nombreOCodigo || x.nombre === nombreOCodigo);
   return (c ? c.codigo : String(nombreOCodigo).substring(0, 3)).toUpperCase();
 };
-
 const nombreColor = (val: string) => {
   const c = colores.value.find((x) => x.codigo === val || x.nombre === val);
   return c ? c.nombre : val;
 };
-
 const nombreProducto = (id: any) => productos.value.find((p) => p.id === Number(id))?.nombre || '';
 
-const agregar = () => {
-  if (!form.value.productoId) return alert('Selecciona un producto.');
-  if (!form.value.color) return alert('Selecciona un color.');
-  if (!form.value.talla) return alert('Ingresa la talla.');
-  const cant = Number(form.value.cantidad);
-  if (!cant || cant < 1) return alert('Cantidad inválida.');
+// --- Colores (filas) ---
+const agregarColor = () => {
+  if (!colorNuevo.value) return;
+  if (filas.value.some((f) => f.color === colorNuevo.value)) { colorNuevo.value = ''; return; }
+  filas.value.push({ color: colorNuevo.value, cant: {} });
+  colorNuevo.value = '';
+};
+const quitarColor = (i: number) => filas.value.splice(i, 1);
 
-  const prodId = Number(form.value.productoId);
-  const cod = codigoColor(form.value.color);
-  const sku = `PRD${prodId}-${cod}-${String(form.value.talla).toUpperCase()}`;
-
-  carrito.value.push({
-    productoId: prodId,
-    nombreProducto: nombreProducto(prodId),
-    color: form.value.color,
-    nombreColor: nombreColor(form.value.color),
-    talla: String(form.value.talla).toUpperCase(),
-    precio: form.value.precio ? Number(form.value.precio) : null,
-    cantidad: cant,
-    sku,
-  });
-  
-  form.value.color = '';
-  form.value.talla = '';
+// --- Tallas (columnas) ---
+const agregarTalla = () => {
+  const t = nuevaTalla.value.trim().toUpperCase();
+  if (!t) return;
+  if (!tallas.value.includes(t)) tallas.value.push(t);
+  nuevaTalla.value = '';
+};
+const quitarTalla = (t: string) => {
+  tallas.value = tallas.value.filter((x) => x !== t);
+  for (const f of filas.value) delete f.cant[t];
 };
 
-const quitar = (i: number) => carrito.value.splice(i, 1);
-const limpiar = () => { carrito.value = []; };
+const totalEtiquetas = computed(() => {
+  let s = 0;
+  for (const f of filas.value) for (const t of tallas.value) s += Number(f.cant[t]) || 0;
+  return s;
+});
 
-const totalEtiquetas = computed(() => carrito.value.reduce((s, l) => s + l.cantidad, 0));
-
-// CÓDIGO DE BARRAS como imagen PNG (canvas), a su resolución natural y SIN estirar.
-// Esta es la forma que SÍ lee la lectora (horizontal, sin rotar, aspecto intacto).
+// CÓDIGO DE BARRAS como imagen PNG (canvas), a resolución natural y SIN estirar.
 const barcodeDataUrl = (sku: string): string => {
   const canvas = document.createElement('canvas');
   JsBarcode(canvas, sku, { format: 'CODE128', width: 2, height: 55, displayValue: false, margin: 2 });
@@ -73,16 +75,27 @@ const barcodeDataUrl = (sku: string): string => {
 };
 
 const imprimir = () => {
-  if (!carrito.value.length) return alert('Agrega al menos una etiqueta al carrito.');
+  if (!productoId.value) return alert('Selecciona un producto.');
+  const prodId = Number(productoId.value);
+  const precio = precioGeneral.value ? Number(precioGeneral.value) : null;
+  const nombreProd = nombreProducto(prodId);
 
-  // Expandimos a una lista plana de etiquetas (cada variante repetida por su cantidad)
+  // Expandimos la matriz a una lista plana de etiquetas (repetidas por cantidad)
   const etiquetas: any[] = [];
-  for (const linea of carrito.value) {
-    const img = barcodeDataUrl(linea.sku);
-    for (let i = 0; i < linea.cantidad; i++) {
-      etiquetas.push({ ...linea, img });
+  for (const f of filas.value) {
+    const cod = codigoColor(f.color);
+    const nomColor = nombreColor(f.color);
+    for (const t of tallas.value) {
+      const cant = Number(f.cant[t]) || 0;
+      if (cant < 1) continue;
+      const sku = `PRD${prodId}-${cod}-${t}`;
+      const img = barcodeDataUrl(sku);
+      for (let k = 0; k < cant; k++) {
+        etiquetas.push({ nombreProducto: nombreProd, nombreColor: nomColor, talla: t, precio, sku, img });
+      }
     }
   }
+  if (!etiquetas.length) return alert('Pon cantidades en al menos una talla/color.');
 
   let cuerpo = '';
   for (let i = 0; i < etiquetas.length; i += 3) {
@@ -111,7 +124,6 @@ const imprimir = () => {
 
   const html = `
     <html><head><title>Etiquetas</title><style>
-      /* Rollo: papel 100mm (10cm), 3 etiquetas de 30mm (3cm) c/u */
       @page { size: 100mm 40mm; margin: 0 !important; }
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; width: 100mm; background: #fff; font-family: Arial, sans-serif; }
@@ -147,6 +159,8 @@ const imprimir = () => {
   }
 };
 
+const limpiar = () => { filas.value = []; };
+
 onMounted(cargar);
 </script>
 
@@ -154,92 +168,94 @@ onMounted(cargar);
   <div class="space-y-6">
     <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
       <h2 class="text-3xl font-bold text-gray-800">🏷️ Impresión de Etiquetas</h2>
-      <p class="text-gray-500 mt-1">Arma un lote de etiquetas (talla, color, precio, cantidad) e imprime todas con su código de barras. Papel 100mm (10cm), 3 etiquetas de 30mm por fila.</p>
+      <p class="text-gray-500 mt-1">Elige producto, marca y precio; agrega colores y pon las cantidades por talla en la tabla. Papel 100mm, 3 etiquetas de 30mm por fila.</p>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4 h-fit">
-        <h3 class="font-bold text-gray-700">Agregar al lote</h3>
-        <div>
-          <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Producto</label>
-          <select v-model="form.productoId" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white outline-none focus:border-blue-500">
-            <option value="">Selecciona...</option>
-            <option v-for="p in productos" :key="p.id" :value="p.id">{{ p.nombre }}</option>
-          </select>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Color</label>
-            <select v-model="form.color" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white outline-none focus:border-blue-500">
-              <option value="">...</option>
-              <option v-for="c in colores" :key="c.id" :value="c.nombre">{{ c.nombre }}</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Talla</label>
-            <input v-model="form.talla" placeholder="S, M, 30..." class="w-full border border-gray-300 rounded-lg p-2.5 text-sm uppercase outline-none focus:border-blue-500">
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Precio (opcional)</label>
-            <input v-model="form.precio" type="number" step="0.10" placeholder="0.00" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-right outline-none focus:border-blue-500">
-          </div>
-          <div>
-            <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Cantidad</label>
-            <input v-model.number="form.cantidad" type="number" min="1" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-center font-bold outline-none focus:border-blue-500">
-          </div>
-        </div>
-        <button @click="agregar" class="w-full bg-gray-900 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-black">+ Agregar al lote</button>
+    <!-- CONFIGURACIÓN GENERAL -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Producto</label>
+        <select v-model="productoId" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white outline-none focus:border-blue-500">
+          <option value="">Selecciona...</option>
+          <option v-for="p in productos" :key="p.id" :value="p.id">{{ p.nombre }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Precio general (opcional)</label>
+        <input v-model="precioGeneral" type="number" step="0.10" placeholder="0.00" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-right outline-none focus:border-blue-500">
+      </div>
+      <div>
+        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Marca (en todas)</label>
+        <select v-model="marca" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white outline-none focus:border-blue-500">
+          <option value="WEST">WEST</option>
+          <option value="TENSOЯ">TENSOЯ</option>
+        </select>
+      </div>
+    </div>
 
-        <div class="pt-2 border-t border-gray-100">
-          <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Marca (en todas)</label>
-          <select v-model="marca" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white outline-none focus:border-blue-500">
-            <option value="WEST">WEST</option>
-            <option value="TENSOЯ">TENSOЯ</option>
+    <!-- TALLAS (COLUMNAS) -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-wrap items-center gap-2">
+      <span class="text-[10px] font-bold text-gray-500 uppercase mr-1">Tallas:</span>
+      <span v-for="t in tallas" :key="t" class="inline-flex items-center gap-1 bg-gray-100 border border-gray-200 rounded-lg px-2.5 py-1 text-sm font-bold text-gray-700">
+        {{ t }}
+        <button @click="quitarTalla(t)" class="text-gray-400 hover:text-red-500 leading-none">&times;</button>
+      </span>
+      <input v-model="nuevaTalla" @keyup.enter="agregarTalla" placeholder="+ talla" class="w-20 border border-gray-300 rounded-lg px-2 py-1 text-sm uppercase outline-none focus:border-blue-500">
+      <button @click="agregarTalla" class="text-sm font-bold text-blue-600 hover:text-blue-800">Agregar</button>
+    </div>
+
+    <!-- MATRIZ COLOR x TALLA -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="p-4 border-b border-gray-100 flex flex-wrap justify-between items-center gap-3">
+        <h3 class="font-bold text-gray-700">Cantidades por color y talla</h3>
+        <div class="flex items-center gap-2">
+          <select v-model="colorNuevo" class="border border-gray-300 rounded-lg p-2 text-sm bg-white outline-none focus:border-blue-500">
+            <option value="">+ Agregar color...</option>
+            <option v-for="c in colores" :key="c.id" :value="c.nombre">{{ c.nombre }}</option>
           </select>
+          <button @click="agregarColor" class="bg-gray-900 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-black">Agregar</button>
         </div>
       </div>
 
-      <div class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-        <div class="p-4 border-b border-gray-100 flex justify-between items-center">
-          <h3 class="font-bold text-gray-700">Lote de etiquetas</h3>
-          <span class="text-sm font-black text-blue-600">{{ totalEtiquetas }} etiqueta(s)</span>
-        </div>
+      <div v-if="!filas.length" class="py-16 text-center text-gray-400 text-sm">
+        Agrega un color para empezar a poner cantidades
+      </div>
 
-        <div v-if="!carrito.length" class="flex-1 flex items-center justify-center py-16 text-gray-400 text-sm">
-          Agrega variantes al lote para imprimir
-        </div>
-        <table v-else class="w-full text-left text-sm">
+      <div v-else class="overflow-x-auto">
+        <table class="w-full text-sm">
           <thead class="bg-gray-50 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
             <tr>
-              <th class="p-3">Producto</th>
-              <th class="p-3">Color / Talla</th>
-              <th class="p-3 text-right">Precio</th>
-              <th class="p-3 text-center">Cant.</th>
-              <th class="p-3 text-center"></th>
+              <th class="p-3 text-left sticky left-0 bg-gray-50">Color</th>
+              <th v-for="t in tallas" :key="t" class="p-3 text-center min-w-[64px]">{{ t }}</th>
+              <th class="p-3"></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
-            <tr v-for="(l, i) in carrito" :key="i" class="hover:bg-gray-50">
-              <td class="p-3">
-                <p class="font-bold text-gray-800">{{ l.nombreProducto }}</p>
-                <p class="text-[10px] font-mono text-gray-400">{{ l.sku }}</p>
+            <tr v-for="(f, i) in filas" :key="f.color" class="hover:bg-gray-50">
+              <td class="p-3 font-bold text-gray-800 sticky left-0 bg-white">{{ nombreColor(f.color) }}</td>
+              <td v-for="t in tallas" :key="t" class="p-2 text-center">
+                <input
+                  v-model.number="f.cant[t]"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  class="w-16 border border-gray-200 rounded-lg text-center py-1.5 outline-none focus:border-blue-500 font-bold"
+                >
               </td>
-              <td class="p-3 text-gray-600">{{ l.nombreColor }} · {{ l.talla }}</td>
-              <td class="p-3 text-right">{{ l.precio != null ? 'S/ ' + l.precio.toFixed(2) : '—' }}</td>
-              <td class="p-3 text-center font-bold">{{ l.cantidad }}</td>
-              <td class="p-3 text-center"><button @click="quitar(i)" class="text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded-lg">🗑️</button></td>
+              <td class="p-2 text-center">
+                <button @click="quitarColor(i)" class="text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded-lg">🗑️</button>
+              </td>
             </tr>
           </tbody>
         </table>
+      </div>
 
-        <div class="p-4 border-t border-gray-100 flex gap-3 mt-auto">
-          <button @click="limpiar" :disabled="!carrito.length" class="px-5 py-3 text-gray-500 hover:bg-gray-100 rounded-xl font-bold text-sm disabled:opacity-40">Vaciar</button>
-          <button @click="imprimir" :disabled="!carrito.length" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-40 flex items-center justify-center gap-2">
-            🖨️ Imprimir {{ totalEtiquetas }} etiquetas
-          </button>
-        </div>
+      <div class="p-4 border-t border-gray-100 flex flex-wrap gap-3 items-center">
+        <span class="text-sm font-black text-blue-600 mr-auto">{{ totalEtiquetas }} etiqueta(s)</span>
+        <button @click="limpiar" :disabled="!filas.length" class="px-5 py-3 text-gray-500 hover:bg-gray-100 rounded-xl font-bold text-sm disabled:opacity-40">Vaciar</button>
+        <button @click="imprimir" :disabled="!totalEtiquetas" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-40 flex items-center justify-center gap-2">
+          🖨️ Imprimir {{ totalEtiquetas }} etiquetas
+        </button>
       </div>
     </div>
   </div>
