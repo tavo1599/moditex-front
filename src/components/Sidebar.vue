@@ -34,6 +34,7 @@ const menuItems = [
   { name: 'Compras', path: '/compras', icon: '🛒', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Liquidaciones', path: '/liquidaciones', icon: '💰', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Almacen de terminados', path: '/almacen-terminados', icon: '🏬', roles: TODOS, seccion: 'produccion' },
+  { name: 'Conteo de Inventario', path: '/conteo-inventario', icon: '📋', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Traslados', path: '/traslados', icon: '🔄', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Punto de Venta', path: '/punto-venta', icon: '🛒', roles: TODOS, seccion: 'produccion' },
   { name: 'Config. Colores', path: '/config-colores', icon: '🎨', roles: ['ADMIN'], seccion: 'produccion' },

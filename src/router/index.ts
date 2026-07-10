@@ -135,6 +135,12 @@ const router = createRouter({
       meta: SOLO_ADMIN
     },
     {
+      path: '/conteo-inventario',
+      name: 'conteo-inventario',
+      component: () => import('../views/ConteoInventarioView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
       path: '/web/productos',
       name: 'web-productos',
       component: () => import('../views/web/WebProductosView.vue'),
