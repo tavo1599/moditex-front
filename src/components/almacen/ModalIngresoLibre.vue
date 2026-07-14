@@ -77,9 +77,18 @@ const scanError = ref('');
 const scanOk = ref('');
 const norm = (s: any) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-const procesarEscaneo = async () => {
-  const code = norm(codigoBarra.value).replace(/'/g, '-');
+// Encadenamos los escaneos para procesarlos UNO POR UNO. Si se procesan en
+// paralelo, dos ingresos del mismo producto leen el mismo stock y uno pisa al
+// otro (se pierde una unidad). Con la cola, cada uno espera a que termine el anterior.
+let colaScan: Promise<void> = Promise.resolve();
+const procesarEscaneo = () => {
+  const raw = codigoBarra.value;
   codigoBarra.value = '';
+  colaScan = colaScan.then(() => manejarCodigo(raw)).catch(() => {});
+};
+
+const manejarCodigo = async (raw: string) => {
+  const code = norm(raw).replace(/'/g, '-');
   if (!code) return;
 
   if (!formIngreso.value.bodegaId) { scanError.value = 'Selecciona primero la bodega.'; return; }
