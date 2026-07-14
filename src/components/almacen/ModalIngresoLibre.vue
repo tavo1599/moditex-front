@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 import api from '../../api/axios'; // Ajusta la ruta si es necesario
 
 const props = defineProps<{
@@ -65,6 +65,58 @@ const selectColor = (color: any) => {
   formIngreso.value.color = color.codigo; searchColor.value = color.nombre; 
   colorCodigoSeleccionado.value = color.codigo; colorFondoSeleccionado.value = color.hex || color.codigoHex || '#E5E7EB'; 
   showColores.value = false;
+};
+
+// --- ESCANEO CON PISTOLA (código de barras = SKU PRD{id}-{color}-{talla}) ---
+const codigoBarra = ref('');
+const escaneoAuto = ref(true); // sumar +1 automático por cada escaneo
+const scanError = ref('');
+const scanOk = ref('');
+const norm = (s: any) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+const procesarEscaneo = async () => {
+  const code = norm(codigoBarra.value).replace(/'/g, '-');
+  codigoBarra.value = '';
+  if (!code) return;
+
+  if (!formIngreso.value.bodegaId) { scanError.value = 'Selecciona primero la bodega.'; return; }
+
+  const m = code.match(/^PRD(\d+)-(.+)-([^-]+)$/);
+  if (!m) { scanError.value = `Código no reconocido: ${code}`; scanOk.value = ''; return; }
+
+  const idProd = Number(m[1]);
+  const colorTok = m[2] || '';
+  const tallaTok = m[3] || '';
+
+  const prod = props.productos.find((p) => Number(p.id) === idProd);
+  if (!prod) { scanError.value = `Producto ${idProd} no existe en el sistema.`; scanOk.value = ''; return; }
+
+  const col = props.colores.find((c) => norm(c.codigo) === colorTok || norm(c.nombre) === colorTok);
+
+  // Rellenamos el formulario con lo escaneado
+  formIngreso.value.productoId = prod.id;
+  searchProducto.value = `${prod.skuBase} - ${prod.nombre}`;
+  formIngreso.value.color = col ? col.codigo : colorTok;
+  searchColor.value = col ? col.nombre : colorTok;
+  colorCodigoSeleccionado.value = col ? col.codigo : colorTok;
+  colorFondoSeleccionado.value = col ? (col.hex || col.codigoHex || '#E5E7EB') : '#E5E7EB';
+  formIngreso.value.talla = tallaTok;
+  scanError.value = '';
+
+  if (escaneoAuto.value) {
+    // Cada escaneo suma 1 unidad y lo guarda directo
+    formIngreso.value.cantidad = 1;
+    await guardarIngreso();
+    scanOk.value = `+1 ${prod.nombre} · ${col ? col.nombre : colorTok} · ${tallaTok}`;
+    setTimeout(() => (scanOk.value = ''), 2500);
+    await nextTick();
+    document.getElementById('scan-ingreso')?.focus();
+  } else {
+    // Modo manual: llena el form y enfoca la cantidad para que pongas el número
+    scanOk.value = 'Listo: pon la cantidad y presiona Ingresar.';
+    await nextTick();
+    (document.querySelector('input[placeholder="Cant."]') as HTMLInputElement)?.focus();
+  }
 };
 
 // Lógica Principal
@@ -152,6 +204,27 @@ onMounted(() => {
             <div v-if="showBodegas" class="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
               <div v-for="b in bodegasFiltradas" :key="b.id" @click="selectBodega(b)" class="px-4 py-3 hover:bg-emerald-50 cursor-pointer text-sm font-bold border-b border-gray-50">{{ b.nombre }}</div>
             </div>
+          </div>
+
+          <!-- ESCANEO CON PISTOLA -->
+          <div class="bg-blue-50 border border-blue-200 rounded-2xl p-4">
+            <div class="flex items-center justify-between mb-2">
+              <label class="block text-[11px] font-black text-blue-700 uppercase ml-1">🔫 Escanear código de barras</label>
+              <label class="flex items-center gap-1.5 text-[11px] font-bold text-blue-700 cursor-pointer select-none">
+                <input type="checkbox" v-model="escaneoAuto" class="accent-blue-600"> Sumar 1 automático
+              </label>
+            </div>
+            <input
+              id="scan-ingreso"
+              type="text"
+              v-model="codigoBarra"
+              @keyup.enter="procesarEscaneo"
+              placeholder="Apunta con la pistola y dispara..."
+              class="w-full bg-white border-2 border-blue-300 rounded-xl px-4 py-4 outline-none focus:ring-2 focus:ring-blue-500 font-mono font-bold text-lg"
+            />
+            <p v-if="scanError" class="mt-2 text-xs font-bold text-red-600 flex items-center gap-1">⚠️ {{ scanError }}</p>
+            <p v-else-if="scanOk" class="mt-2 text-xs font-bold text-emerald-600 flex items-center gap-1">✅ {{ scanOk }}</p>
+            <p v-else class="mt-2 text-[10px] text-blue-500">Selecciona la bodega arriba y escanea. Con "Sumar 1 automático" cada disparo agrega una unidad.</p>
           </div>
 
           <div class="relative">
