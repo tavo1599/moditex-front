@@ -16,6 +16,9 @@ const formIngreso = ref({ bodegaId: '' as number | '', productoId: '' as number 
 const historialSesion = ref<any[]>([]);
 const mostrarExito = ref(false);
 
+// Contador de la sesión: total de unidades y de registros ingresados
+const totalIngresado = computed(() => historialSesion.value.reduce((s, i) => s + Number(i.cantidad || 0), 0));
+
 // Tallas Estáticas
 const tallasAgrupadas = {
   'Letras (Polos, Casacas, etc.)': ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '4XL'],
@@ -214,6 +217,10 @@ onMounted(() => {
                 <input type="checkbox" v-model="escaneoAuto" class="accent-blue-600"> Sumar 1 automático
               </label>
             </div>
+            <div class="flex items-center justify-center gap-2 mb-3 bg-white/70 rounded-xl py-2 border border-blue-100">
+              <span class="text-[11px] font-bold text-blue-600 uppercase">Ingresadas en esta sesión:</span>
+              <span class="text-2xl font-black text-emerald-600">{{ totalIngresado }}</span>
+            </div>
             <input
               id="scan-ingreso"
               type="text"
@@ -279,7 +286,12 @@ onMounted(() => {
 
       <div class="hidden md:flex w-[45%] bg-gray-50 border-l border-gray-100 flex-col">
         <div class="p-8 border-b border-gray-200 flex justify-between items-center bg-gray-100/50">
-          <h4 class="font-black text-xl text-gray-700 flex items-center gap-2">📋 Historial de Sesión</h4>
+          <div>
+            <h4 class="font-black text-xl text-gray-700 flex items-center gap-2">📋 Historial de Sesión</h4>
+            <p class="text-[11px] font-bold text-emerald-600 mt-1">
+              Ingresadas: <span class="text-2xl font-black align-middle">{{ totalIngresado }}</span> unidad(es) · {{ historialSesion.length }} registro(s)
+            </p>
+          </div>
           <button @click="emit('cerrar')" class="text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full p-2 transition-colors">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"></path></svg>
           </button>
