@@ -74,14 +74,14 @@ const barcodeDataUrl = (sku: string): string => {
   return canvas.toDataURL('image/png');
 };
 
-const imprimir = () => {
-  if (!productoId.value) return alert('Selecciona un producto.');
+// Lista plana de etiquetas (sin imagen) de la MATRIZ actual (una sola prenda)
+const construirEtiquetasActuales = (): any[] => {
+  if (!productoId.value) return [];
   const prodId = Number(productoId.value);
   const precio = precioGeneral.value ? Number(precioGeneral.value) : null;
   const nombreProd = nombreProducto(prodId);
-
-  // Expandimos la matriz a una lista plana de etiquetas (repetidas por cantidad)
-  const etiquetas: any[] = [];
+  const marcaLote = marca.value;
+  const out: any[] = [];
   for (const f of filas.value) {
     const cod = codigoColor(f.color);
     const nomColor = nombreColor(f.color);
@@ -89,13 +89,44 @@ const imprimir = () => {
       const cant = Number(f.cant[t]) || 0;
       if (cant < 1) continue;
       const sku = `PRD${prodId}-${cod}-${t}`;
-      const img = barcodeDataUrl(sku);
       for (let k = 0; k < cant; k++) {
-        etiquetas.push({ nombreProducto: nombreProd, nombreColor: nomColor, talla: t, precio, sku, img });
+        out.push({ nombreProducto: nombreProd, nombreColor: nomColor, talla: t, precio, sku, marca: marcaLote });
       }
     }
   }
-  if (!etiquetas.length) return alert('Pon cantidades en al menos una talla/color.');
+  return out;
+};
+
+// 🧺 COLA DE IMPRESIÓN: cada lote es una prenda ya lista (con su marca/precio/tallas)
+const cola = ref<any[]>([]);
+const totalCola = computed(() => cola.value.reduce((s, l) => s + l.etiquetas.length, 0));
+const totalGeneral = computed(() => totalCola.value + totalEtiquetas.value);
+
+const agregarACola = () => {
+  const etiquetas = construirEtiquetasActuales();
+  if (!etiquetas.length) return alert('Pon cantidades en al menos una talla/color antes de agregar a la cola.');
+  cola.value.push({
+    id: Date.now(),
+    producto: nombreProducto(Number(productoId.value)),
+    marca: marca.value,
+    total: etiquetas.length,
+    etiquetas,
+  });
+  vaciarCantidades(); // limpia los números pero conserva los colores para la siguiente prenda
+};
+const quitarLote = (i: number) => cola.value.splice(i, 1);
+
+const imprimir = () => {
+  // Junta las etiquetas de la COLA + las de la matriz actual (si tiene cantidades)
+  const etiquetas: any[] = [...cola.value.flatMap((l) => l.etiquetas), ...construirEtiquetasActuales()];
+  if (!etiquetas.length) return alert('No hay etiquetas para imprimir. Pon cantidades o agrega prendas a la cola.');
+
+  // Generamos el código de barras UNA vez por SKU (cache) y se lo asignamos a cada etiqueta
+  const imgCache: Record<string, string> = {};
+  for (const e of etiquetas) {
+    if (!imgCache[e.sku]) imgCache[e.sku] = barcodeDataUrl(e.sku);
+    e.img = imgCache[e.sku];
+  }
 
   let cuerpo = '';
   for (let i = 0; i < etiquetas.length; i += 3) {
@@ -106,7 +137,7 @@ const imprimir = () => {
         cuerpo += `
           <div class="etiqueta">
             ${e.precio != null ? `<div class="precio">PRECIO S/ ${e.precio.toFixed(2)}</div>` : ''}
-            <div class="marca">${marca.value}</div>
+            <div class="marca">${e.marca}</div>
             <div class="tipo-prenda">${e.nombreProducto}</div>
             <div class="svg-container"><img src="${e.img}" style="width:29mm;height:auto;"></div>
             <div class="sku-lectura">${e.sku}</div>
@@ -159,7 +190,10 @@ const imprimir = () => {
   }
 };
 
-const limpiar = () => { filas.value = []; };
+// Vacía SOLO las cantidades (números), conservando los colores para reutilizarlos
+const vaciarCantidades = () => { for (const f of filas.value) f.cant = {}; };
+// Vacía los colores (filas). También limpia sus cantidades.
+const vaciarColores = () => { filas.value = []; };
 
 onMounted(cargar);
 </script>
@@ -251,11 +285,44 @@ onMounted(cargar);
       </div>
 
       <div class="p-4 border-t border-gray-100 flex flex-wrap gap-3 items-center">
-        <span class="text-sm font-black text-blue-600 mr-auto">{{ totalEtiquetas }} etiqueta(s)</span>
-        <button @click="limpiar" :disabled="!filas.length" class="px-5 py-3 text-gray-500 hover:bg-gray-100 rounded-xl font-bold text-sm disabled:opacity-40">Vaciar</button>
-        <button @click="imprimir" :disabled="!totalEtiquetas" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-40 flex items-center justify-center gap-2">
-          🖨️ Imprimir {{ totalEtiquetas }} etiquetas
+        <span class="text-sm font-black text-blue-600 mr-auto">{{ totalEtiquetas }} etiqueta(s) en esta prenda</span>
+        <button @click="vaciarCantidades" :disabled="!totalEtiquetas" class="px-5 py-3 text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-xl font-bold text-sm disabled:opacity-40" title="Borra solo los números, conserva los colores">
+          Vaciar cantidades
         </button>
+        <button @click="vaciarColores" :disabled="!filas.length" class="px-5 py-3 text-gray-500 hover:bg-gray-100 rounded-xl font-bold text-sm disabled:opacity-40" title="Borra también los colores">
+          Vaciar colores
+        </button>
+        <button @click="agregarACola" :disabled="!totalEtiquetas" class="bg-gray-900 text-white px-6 py-3 rounded-xl font-black hover:bg-black disabled:opacity-40 flex items-center gap-2">
+          ➕ Agregar prenda a la cola
+        </button>
+      </div>
+    </div>
+
+    <!-- COLA DE IMPRESIÓN -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+      <div class="flex flex-wrap justify-between items-center gap-3 mb-3">
+        <h3 class="font-bold text-gray-700">🧺 Cola de impresión <span class="text-gray-400 font-normal text-sm">({{ cola.length }} prenda(s))</span></h3>
+        <button
+          @click="imprimir"
+          :disabled="!totalGeneral"
+          class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-40 flex items-center gap-2"
+        >
+          🖨️ Imprimir todo ({{ totalGeneral }})
+        </button>
+      </div>
+
+      <div v-if="!cola.length" class="text-sm text-gray-400 py-4 text-center">
+        Aún no agregas prendas a la cola. Arma una prenda arriba y pulsa "Agregar prenda a la cola". Puedes imprimir directo (solo la prenda actual) o juntar varias aquí.
+      </div>
+      <div v-else class="space-y-2">
+        <div v-for="(l, i) in cola" :key="l.id" class="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-4 py-2.5">
+          <div>
+            <span class="font-bold text-gray-800">{{ l.producto }}</span>
+            <span class="text-xs text-gray-400 ml-2">· {{ l.marca }} · {{ l.total }} etiqueta(s)</span>
+          </div>
+          <button @click="quitarLote(i)" class="text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded-lg">🗑️</button>
+        </div>
+        <p class="text-xs text-gray-500 pt-1">Total en la cola: <b>{{ totalCola }}</b> · Prenda actual sin agregar: <b>{{ totalEtiquetas }}</b> · "Imprimir todo" imprime ambas.</p>
       </div>
     </div>
   </div>
