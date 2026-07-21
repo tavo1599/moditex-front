@@ -59,6 +59,12 @@ const {
   totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual
 } = useVentas(inventarioConSKU, (carritoActual) => emitirSincronizacion(carritoActual));
 
+// Muestra el NOMBRE del color (los vendedores no manejan códigos como "NGR")
+const nombreColor = (val: any) => {
+  const c = colores.value.find((x) => x.codigo === val || x.nombre === val);
+  return c ? c.nombre : val;
+};
+
 // 🔍 Búsqueda manual (cuando la etiqueta no se puede escanear)
 const busquedaManual = ref('');
 const resultadosBusqueda = computed(() => {
@@ -231,7 +237,7 @@ onMounted(() => {
                   <p class="font-black text-gray-800 text-sm truncate">{{ p.producto?.nombre }}</p>
                   <div class="flex flex-wrap gap-1 mt-1">
                     <span class="text-[10px] font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">T. {{ p.talla }}</span>
-                    <span class="text-[10px] font-bold bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">{{ p.color }}</span>
+                    <span class="text-[10px] font-bold bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">{{ nombreColor(p.color) }}</span>
                     <span class="text-[10px] font-mono text-gray-400">{{ p.skuCalculado }}</span>
                   </div>
                 </div>
@@ -319,9 +325,9 @@ onMounted(() => {
               <div class="flex-1 min-w-0">
                 <p class="font-black text-gray-800 text-base md:text-base leading-tight">{{ item.nombre }}</p>
                 <div class="flex flex-wrap gap-1.5 mt-2">
-                  <span class="text-[11px] md:text-[9px] font-mono bg-gray-100 text-gray-600 font-bold px-2 py-1 md:py-0.5 rounded border border-gray-200">{{ item.sku }}</span>
-                  <span class="text-[11px] md:text-[9px] font-bold bg-blue-50 text-blue-700 px-2 py-1 md:py-0.5 rounded border border-blue-100">Talla {{ item.talla }}</span>
-                  <span class="text-[11px] md:text-[9px] font-bold bg-purple-50 text-purple-700 px-2 py-1 md:py-0.5 rounded border border-purple-100">C: {{ item.color }}</span>
+                  <span class="text-[12px] md:text-[10px] font-bold bg-blue-50 text-blue-700 px-2.5 py-1 md:py-0.5 rounded border border-blue-100">Talla {{ item.talla }}</span>
+                  <span class="text-[12px] md:text-[10px] font-bold bg-purple-50 text-purple-700 px-2.5 py-1 md:py-0.5 rounded border border-purple-100">{{ nombreColor(item.color) }}</span>
+                  <span class="text-[10px] md:text-[9px] font-mono text-gray-400 px-1 py-1 md:py-0.5">{{ item.sku }}</span>
                 </div>
               </div>
               
