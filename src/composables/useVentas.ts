@@ -1,8 +1,27 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import api from '../api/axios';
 
+// Recordamos la última bodega elegida para no tener que seleccionarla cada vez
+// que se cambia de vista (se guarda en el navegador y se puede cambiar normal).
+const CLAVE_BODEGA = 'pv_bodega_seleccionada';
+const leerBodegaGuardada = (): number | '' => {
+  try {
+    const v = localStorage.getItem(CLAVE_BODEGA);
+    return v ? Number(v) : '';
+  } catch { return ''; }
+};
+
 export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (carrito: any[]) => void) {
-  const bodegaSeleccionada = ref<number | ''>('');
+  const bodegaSeleccionada = ref<number | ''>(leerBodegaGuardada());
+
+  // Cada vez que cambie, la guardamos
+  watch(bodegaSeleccionada, (val) => {
+    try {
+      if (val === '' || val === null || val === undefined) localStorage.removeItem(CLAVE_BODEGA);
+      else localStorage.setItem(CLAVE_BODEGA, String(val));
+    } catch { /* sin storage disponible */ }
+  });
+
   const codigoEscaneado = ref('');
   const carrito = ref<any[]>([]);
   const inputEscaner = ref<HTMLInputElement | null>(null);
