@@ -171,9 +171,10 @@ onMounted(() => {
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
       
-      <div class="lg:col-span-4 space-y-4">
-        
-        <div class="bg-gray-900 rounded-3xl p-6 shadow-xl shadow-gray-900/10 relative overflow-hidden">
+      <!-- En móvil usamos display:contents para poder intercalar el carrito entre estas tarjetas -->
+      <div class="contents lg:block lg:col-span-4 lg:space-y-4">
+
+        <div class="order-1 lg:order-none bg-gray-900 rounded-3xl p-6 shadow-xl shadow-gray-900/10 relative overflow-hidden">
           <div class="flex items-center gap-3 mb-4">
             <div class="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center border border-gray-700">
               <span class="text-sm">🔫</span>
@@ -190,12 +191,11 @@ onMounted(() => {
           />
         </div>
 
-        <div class="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm space-y-4">
+        <div class="order-3 lg:order-none bg-white rounded-3xl p-6 border border-gray-200 shadow-sm space-y-4">
           <h3 class="font-black text-gray-800 text-xs uppercase tracking-wider flex items-center gap-2"><span>📒</span> Modalidad Comercial</h3>
-          <div class="grid grid-cols-3 gap-2">
-            <button @click="condicionPago = 'CONTADO'" :class="condicionPago === 'CONTADO' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-400'" class="p-3 rounded-xl font-black text-[10px] transition-all">CONTADO</button>
-            <button @click="condicionPago = 'CREDITO_ESTRICTO'" :class="condicionPago === 'CREDITO_ESTRICTO' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-400'" class="p-3 rounded-xl font-black text-[10px] transition-all">C. CUOTAS</button>
-            <button @click="condicionPago = 'CREDITO_FLEXIBLE'" :class="condicionPago === 'CREDITO_FLEXIBLE' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-400'" class="p-3 rounded-xl font-black text-[10px] transition-all">C. LIBRE</button>
+          <div class="grid grid-cols-2 gap-2">
+            <button @click="condicionPago = 'CONTADO'" :class="condicionPago === 'CONTADO' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-400'" class="p-3 rounded-xl font-black text-[11px] transition-all">CONTADO</button>
+            <button @click="condicionPago = 'CREDITO_FLEXIBLE'" :class="condicionPago === 'CREDITO_FLEXIBLE' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-400'" class="p-3 rounded-xl font-black text-[11px] transition-all">CRÉDITO LIBRE</button>
           </div>
 
           <div v-if="condicionPago !== 'CONTADO'" class="space-y-3 p-4 bg-gray-50 rounded-2xl border border-gray-100 animate-[fadeIn_0.2s_ease-out]">
@@ -204,7 +204,7 @@ onMounted(() => {
               <div class="flex gap-2">
                 <select v-model="clienteId" class="w-full p-3 bg-white rounded-xl border border-gray-200 font-bold text-xs outline-none">
                   <option :value="null" disabled>Selecciona un Mayorista...</option>
-                  <option v-for="c in clientes" :key="c.id" :value="c.id">{{ c.nombre }} (S/ {{ c.limiteCredito }})</option>
+                  <option v-for="c in clientes" :key="c.id" :value="c.id">{{ c.nombre }}</option>
                 </select>
                 <button @click="modalNuevoCliente = true" class="bg-gray-900 text-white px-4 rounded-xl hover:bg-gray-800 transition text-lg font-black shrink-0" title="Nuevo Cliente">
                   +
@@ -220,24 +220,13 @@ onMounted(() => {
               </div>
             </div>
 
-            <div v-if="condicionPago === 'CREDITO_ESTRICTO'" class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="block text-[9px] font-black text-gray-400 uppercase tracking-wider mb-1">N° Cuotas</label>
-                <input v-model.number="numeroCuotas" type="number" min="1" class="w-full bg-white border border-gray-200 p-3 rounded-xl font-bold text-xs outline-none text-center" />
-              </div>
-              <div>
-                <label class="block text-[9px] font-black text-gray-400 uppercase tracking-wider mb-1">Frecuencia</label>
-                <select v-model="frecuenciaPago" class="w-full p-3 bg-white rounded-xl border border-gray-200 font-bold text-xs outline-none cursor-pointer">
-                  <option value="SEMANAL">Semanal</option>
-                  <option value="QUINCENAL">Quincenal</option>
-                  <option value="MENSUAL">Mensual</option>
-                </select>
-              </div>
-            </div>
+            <p class="text-[10px] font-bold text-orange-500 bg-orange-50 border border-orange-100 rounded-xl p-2.5">
+              Crédito libre: el cliente abona cuando pueda. Sin límite de crédito.
+            </p>
           </div>
         </div>
 
-        <div class="bg-white rounded-3xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
+        <div class="order-4 lg:order-none bg-white rounded-3xl shadow-sm border border-gray-200 flex flex-col overflow-hidden">
           <button @click="mostrarVinculacion = !mostrarVinculacion" class="w-full p-5 flex justify-between items-center bg-white hover:bg-gray-50 transition-colors focus:outline-none">
              <div class="flex items-center gap-3">
                <div class="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center border border-blue-100"><span class="text-sm">📱</span></div>
@@ -262,7 +251,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="lg:col-span-8 bg-white rounded-3xl shadow-xl border border-gray-100 flex flex-col overflow-hidden h-[75vh]">
+      <div class="order-2 lg:order-none lg:col-span-8 bg-white rounded-3xl shadow-xl border border-gray-100 flex flex-col overflow-hidden h-[70vh] lg:h-[75vh]">
         
         <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center shrink-0">
           <h2 class="text-lg font-black text-gray-800 flex items-center gap-2"><span>🛒</span> Carrito de Compras</h2>
@@ -276,12 +265,12 @@ onMounted(() => {
           
           <div v-else class="space-y-3">
             <div v-for="(item, index) in carrito" :key="item.sku" class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <div class="flex-1">
-                <p class="font-black text-gray-800 text-sm md:text-base">{{ item.nombre }}</p>
-                <div class="flex flex-wrap gap-1.5 mt-1.5">
-                  <span class="text-[9px] font-mono bg-gray-100 text-gray-600 font-bold px-2 py-0.5 rounded border border-gray-200">{{ item.sku }}</span>
-                  <span class="text-[9px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">Talla {{ item.talla }}</span>
-                  <span class="text-[9px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-100">C: {{ item.color }}</span>
+              <div class="flex-1 min-w-0">
+                <p class="font-black text-gray-800 text-base md:text-base leading-tight">{{ item.nombre }}</p>
+                <div class="flex flex-wrap gap-1.5 mt-2">
+                  <span class="text-[11px] md:text-[9px] font-mono bg-gray-100 text-gray-600 font-bold px-2 py-1 md:py-0.5 rounded border border-gray-200">{{ item.sku }}</span>
+                  <span class="text-[11px] md:text-[9px] font-bold bg-blue-50 text-blue-700 px-2 py-1 md:py-0.5 rounded border border-blue-100">Talla {{ item.talla }}</span>
+                  <span class="text-[11px] md:text-[9px] font-bold bg-purple-50 text-purple-700 px-2 py-1 md:py-0.5 rounded border border-purple-100">C: {{ item.color }}</span>
                 </div>
               </div>
               
