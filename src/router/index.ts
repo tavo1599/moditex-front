@@ -135,6 +135,16 @@ const router = createRouter({
       meta: SOLO_ADMIN
     },
     {
+      path: '/cierre-caja',
+      name: 'cierre-caja',
+      component: () => import('../views/CierreCajaView.vue')
+    },
+    {
+      path: '/devoluciones',
+      name: 'devoluciones',
+      component: () => import('../views/DevolucionesView.vue')
+    },
+    {
       path: '/conteo-inventario',
       name: 'conteo-inventario',
       component: () => import('../views/ConteoInventarioView.vue'),

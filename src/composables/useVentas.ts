@@ -139,6 +139,43 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     nextTick(() => inputEscaner.value?.focus());
   };
 
+  // 🔍 Agrega una prenda al carrito SIN escanear (buscándola en el inventario).
+  // Útil cuando la etiqueta está rota, borrosa o despegada.
+  const agregarPrendaManual = (prenda: any) => {
+    if (!bodegaSeleccionada.value) return alert('Selecciona una bodega primero.');
+    if (!prenda || Number(prenda.stock) <= 0) return alert('Esa prenda no tiene stock disponible.');
+
+    const productoId = Number(prenda.productoId || prenda.producto?.id);
+    const nombre = prenda.producto?.nombre || 'Producto';
+    const color = prenda.color;
+    const talla = prenda.talla;
+    const stockMaximo = Number(prenda.stock);
+
+    const itemEnCarrito = carrito.value.find(
+      (c) => c.productoId === productoId && c.color === color && c.talla === talla,
+    );
+
+    if (itemEnCarrito) {
+      if (itemEnCarrito.cantidad + 1 > stockMaximo) {
+        return alert('Atención: No puedes superar el stock máximo disponible en el almacén.');
+      }
+      itemEnCarrito.cantidad++;
+    } else {
+      carrito.value.unshift({
+        sku: prenda.skuCalculado || `PRD${productoId}-${color}-${talla}`,
+        productoId,
+        nombre,
+        color,
+        talla,
+        cantidad: 1,
+        stockMaximo,
+        precioUnitario: prenda.producto?.precioVenta || 0,
+      });
+    }
+
+    emitirSincronizacionCb(carrito.value);
+  };
+
   const quitarDelCarrito = (index: number) => {
     carrito.value.splice(index, 1);
     emitirSincronizacionCb(carrito.value);
@@ -149,6 +186,6 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     bodegaSeleccionada, codigoEscaneado, carrito, inputEscaner,
     condicionPago, clienteId, adelanto, numeroCuotas, frecuenciaPago,
     clienteNombre, tipoVenta, metodoEntrega, destinoEnvio, modalTicket, ventaRealizada,
-    totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito
+    totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual
   };
 }

@@ -56,8 +56,26 @@ const {
   bodegaSeleccionada, codigoEscaneado, carrito, inputEscaner,
   condicionPago, clienteId, adelanto, numeroCuotas, frecuenciaPago,
   clienteNombre, tipoVenta, metodoEntrega, destinoEnvio, modalTicket, ventaRealizada,
-  totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito
+  totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual
 } = useVentas(inventarioConSKU, (carritoActual) => emitirSincronizacion(carritoActual));
+
+// 🔍 Búsqueda manual (cuando la etiqueta no se puede escanear)
+const busquedaManual = ref('');
+const resultadosBusqueda = computed(() => {
+  const q = busquedaManual.value.trim().toLowerCase();
+  if (!q || !bodegaSeleccionada.value) return [];
+  return inventarioConSKU.value
+    .filter((i: any) => Number(i.bodegaId) === Number(bodegaSeleccionada.value) && Number(i.stock) > 0)
+    .filter((i: any) => {
+      const txt = `${i.producto?.nombre || ''} ${i.skuCalculado || ''} ${i.color} ${i.talla}`.toLowerCase();
+      return txt.includes(q);
+    })
+    .slice(0, 30);
+});
+const seleccionarPrenda = (prenda: any) => {
+  agregarPrendaManual(prenda);
+  busquedaManual.value = '';
+};
 
 const { pinConexion, movilVinculado, mostrarVinculacion, urlVinculacion, emitirSincronizacion } = useScanner(
   () => procesarEscaneo(),
@@ -189,6 +207,39 @@ onMounted(() => {
             placeholder="Escanea aquí..."
             class="w-full bg-black/50 border-2 border-gray-700 p-4 rounded-xl text-xl text-center outline-none focus:border-blue-500 focus:bg-gray-950 transition-all placeholder-gray-700 text-white font-mono font-bold"
           />
+
+          <!-- 🔍 Búsqueda manual: para etiquetas rotas/borrosas o sin sticker -->
+          <div class="mt-4 pt-4 border-t border-gray-800 relative">
+            <label class="text-gray-400 font-black uppercase tracking-widest text-[10px] block mb-2">O busca la prenda a mano</label>
+            <input
+              v-model="busquedaManual"
+              type="text"
+              placeholder="Nombre, SKU, color o talla..."
+              class="w-full bg-gray-800/60 border border-gray-700 p-3 rounded-xl text-sm outline-none focus:border-blue-500 text-white placeholder-gray-600 font-bold"
+            />
+            <p v-if="!bodegaSeleccionada" class="text-[10px] text-orange-400 font-bold mt-1.5">Selecciona una bodega para poder buscar.</p>
+
+            <!-- Resultados -->
+            <div v-if="resultadosBusqueda.length" class="absolute z-30 left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-200 max-h-72 overflow-y-auto">
+              <button
+                v-for="p in resultadosBusqueda"
+                :key="p.id"
+                @click="seleccionarPrenda(p)"
+                class="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 last:border-none flex justify-between items-center gap-3"
+              >
+                <div class="min-w-0">
+                  <p class="font-black text-gray-800 text-sm truncate">{{ p.producto?.nombre }}</p>
+                  <div class="flex flex-wrap gap-1 mt-1">
+                    <span class="text-[10px] font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">T. {{ p.talla }}</span>
+                    <span class="text-[10px] font-bold bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">{{ p.color }}</span>
+                    <span class="text-[10px] font-mono text-gray-400">{{ p.skuCalculado }}</span>
+                  </div>
+                </div>
+                <span class="text-[11px] font-black text-emerald-600 shrink-0">{{ p.stock }} u.</span>
+              </button>
+            </div>
+            <p v-else-if="busquedaManual && bodegaSeleccionada" class="text-[10px] text-gray-500 font-bold mt-2">Sin resultados con stock en esta bodega.</p>
+          </div>
         </div>
 
         <div class="order-3 lg:order-none bg-white rounded-3xl p-6 border border-gray-200 shadow-sm space-y-4">

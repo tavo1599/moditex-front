@@ -79,6 +79,54 @@ const pendientes = computed(() => {
   return n;
 });
 
+// 🔫 CONTEO POR ESCANEO: cada disparo suma 1 al conteo físico de esa prenda
+const codigoBarra = ref('');
+const scanError = ref('');
+const scanOk = ref('');
+const norm = (s: any) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+const procesarEscaneoConteo = async () => {
+  const code = norm(codigoBarra.value).replace(/'/g, '-');
+  codigoBarra.value = '';
+  if (!code) return;
+  if (!bodegaSel.value) { scanError.value = 'Selecciona primero el almacén.'; return; }
+
+  const m = code.match(/^PRD(\d+)-(.+)-([^-]+)$/);
+  if (!m) { scanError.value = `Código no reconocido: ${code}`; scanOk.value = ''; return; }
+  const idProd = Number(m[1]);
+  const colorTok = m[2] || '';
+  const tallaTok = m[3] || '';
+
+  // Buscamos la fila del inventario de esa bodega (color por código o nombre)
+  const item = itemsBodega.value.find((it: any) => {
+    if (Number(it.productoId) !== idProd) return false;
+    if (norm(it.talla) !== tallaTok) return false;
+    const c = colores.value.find((x) => norm(x.codigo) === norm(it.color) || norm(x.nombre) === norm(it.color));
+    return (
+      norm(it.color) === colorTok ||
+      (!!c && (norm(c.codigo) === colorTok || norm(c.nombre) === colorTok))
+    );
+  });
+
+  if (!item) {
+    scanError.value = `Esa prenda no está registrada en este almacén (${code}). Agrégala como variante nueva.`;
+    scanOk.value = '';
+    return;
+  }
+
+  // Suma 1 al conteo físico (si es el primer escaneo de esa fila, arranca en 0)
+  const actual = Number(conteos.value[item.id]);
+  conteos.value[item.id] = (Number.isNaN(actual) ? 0 : actual) + 1;
+  scanError.value = '';
+  scanOk.value = `${item.producto?.nombre || ''} · ${nombreColor(item.color)} · ${item.talla} → ${conteos.value[item.id]}`;
+  setTimeout(() => (scanOk.value = ''), 2000);
+};
+
+// Al escanear queremos partir de 0 (no del stock del sistema) para contar de verdad
+const ponerTodoEnCero = () => {
+  for (const it of itemsBodega.value) conteos.value[it.id] = 0;
+};
+
 const agregarVariante = () => {
   const f = formNuevo.value;
   if (!f.productoId) return alert('Selecciona el producto.');
@@ -160,6 +208,26 @@ onMounted(cargarTodo);
     </div>
 
     <template v-if="bodegaSel">
+      <!-- 🔫 CONTEO POR ESCANEO -->
+      <div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <p class="text-[11px] font-black text-blue-700 uppercase">🔫 Contar escaneando</p>
+          <button @click="ponerTodoEnCero" class="text-[11px] font-bold text-blue-600 border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-lg">
+            Poner todo en 0 para contar
+          </button>
+        </div>
+        <input
+          v-model="codigoBarra"
+          @keyup.enter="procesarEscaneoConteo"
+          type="text"
+          placeholder="Dispara con la pistola a cada prenda..."
+          class="w-full bg-white border-2 border-blue-300 rounded-xl px-4 py-3.5 outline-none focus:ring-2 focus:ring-blue-500 font-mono font-bold"
+        />
+        <p v-if="scanError" class="mt-2 text-xs font-bold text-red-600">⚠️ {{ scanError }}</p>
+        <p v-else-if="scanOk" class="mt-2 text-xs font-bold text-emerald-600">✅ +1 · {{ scanOk }}</p>
+        <p v-else class="mt-2 text-[10px] text-blue-500">Cada disparo suma 1 al conteo físico de esa prenda. Tip: pulsa "Poner todo en 0" antes de empezar a contar.</p>
+      </div>
+
       <!-- Agregar variante nueva -->
       <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
         <p class="text-sm font-bold text-gray-700 mb-1">➕ Agregar variante que NO está en el sistema</p>

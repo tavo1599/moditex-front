@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#111111"/>
+  <text x="32" y="41" text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="26" font-weight="500" letter-spacing="1.5" fill="#F7F5F2">EW</text>
+  <rect x="14" y="49" width="36" height="3" rx="1.5" fill="#2563EB"/>
+</svg>
