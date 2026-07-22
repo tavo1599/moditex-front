@@ -198,7 +198,8 @@ onMounted(() => {
       <!-- En móvil usamos display:contents para poder intercalar el carrito entre estas tarjetas -->
       <div class="contents lg:block lg:col-span-4 lg:space-y-4">
 
-        <div class="order-1 lg:order-none bg-gray-900 rounded-3xl p-6 shadow-xl shadow-gray-900/10 relative overflow-hidden">
+        <!-- Sin overflow-hidden: recortaba el desplegable del buscador. z-20 para que quede sobre las tarjetas de abajo -->
+        <div class="order-1 lg:order-none bg-gray-900 rounded-3xl p-6 shadow-xl shadow-gray-900/10 relative z-20">
           <div class="flex items-center gap-3 mb-4">
             <div class="w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center border border-gray-700">
               <span class="text-sm">🔫</span>
@@ -226,7 +227,7 @@ onMounted(() => {
             <p v-if="!bodegaSeleccionada" class="text-[10px] text-orange-400 font-bold mt-1.5">Selecciona una bodega para poder buscar.</p>
 
             <!-- Resultados -->
-            <div v-if="resultadosBusqueda.length" class="absolute z-30 left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-200 max-h-72 overflow-y-auto">
+            <div v-if="resultadosBusqueda.length" class="absolute z-50 left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-200 max-h-[60vh] overflow-y-auto">
               <button
                 v-for="p in resultadosBusqueda"
                 :key="p.id"

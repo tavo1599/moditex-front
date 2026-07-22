@@ -239,7 +239,8 @@ onMounted(async () => { await cargarBodegas(); await cargarInventario(); });
     <p v-if="error" class="bg-red-50 border border-red-200 text-red-600 rounded-xl p-4 text-sm font-bold">⚠️ {{ error }}</p>
 
     <!-- Detalle de la venta -->
-    <div v-if="venta" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <!-- Sin overflow-hidden: recortaba el desplegable del buscador del cambio -->
+    <div v-if="venta" class="bg-white rounded-xl shadow-sm border border-gray-100">
       <div class="p-4 border-b border-gray-100 flex flex-wrap justify-between items-center gap-2">
         <div>
           <h3 class="font-bold text-gray-800">{{ venta.correlativo }}</h3>
@@ -305,7 +306,7 @@ onMounted(async () => { await cargarBodegas(); await cargarInventario(); });
               placeholder="Busca por nombre, color o talla..."
               class="w-full border border-blue-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             />
-            <div v-if="resultados.length" class="absolute z-30 left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-gray-200 max-h-60 overflow-y-auto">
+            <div v-if="resultados.length" class="absolute z-50 left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-gray-200 max-h-[55vh] overflow-y-auto">
               <button
                 v-for="p in resultados"
                 :key="p.id"
