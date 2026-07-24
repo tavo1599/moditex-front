@@ -67,10 +67,11 @@ const totalEtiquetas = computed(() => {
   return s;
 });
 
-// CÓDIGO DE BARRAS como imagen PNG (canvas), a resolución natural y SIN estirar.
+// CÓDIGO DE BARRAS como imagen PNG en ALTA resolución (para que al ir a lo largo
+// de los 40mm y rotarlo salga nítido y bien legible por la lectora).
 const barcodeDataUrl = (sku: string): string => {
   const canvas = document.createElement('canvas');
-  JsBarcode(canvas, sku, { format: 'CODE128', width: 2, height: 55, displayValue: false, margin: 2 });
+  JsBarcode(canvas, sku, { format: 'CODE128', width: 3, height: 80, displayValue: false, margin: 6 });
   return canvas.toDataURL('image/png');
 };
 
@@ -136,14 +137,16 @@ const imprimir = () => {
       if (e) {
         cuerpo += `
           <div class="etiqueta">
-            ${e.precio != null ? `<div class="precio">PRECIO S/ ${e.precio.toFixed(2)}</div>` : ''}
-            <div class="marca">${e.marca}</div>
-            <div class="tipo-prenda">${e.nombreProducto}</div>
-            <div class="svg-container"><img src="${e.img}" style="width:29mm;height:auto;"></div>
-            <div class="sku-lectura">${e.sku}</div>
-            <div class="footer-etiqueta">
-              <span class="talla-gigante">${e.talla}</span>
-              <span class="color-texto">${e.nombreColor}</span>
+            <div class="contenido">
+              ${e.precio != null ? `<div class="precio">PRECIO S/ ${e.precio.toFixed(2)}</div>` : ''}
+              <div class="marca">${e.marca}</div>
+              <div class="tipo-prenda">${e.nombreProducto}</div>
+              <div class="svg-container"><img src="${e.img}" style="width:37mm;height:9mm;"></div>
+              <div class="sku-lectura">${e.sku}</div>
+              <div class="footer-etiqueta">
+                <span class="talla-gigante">${e.talla}</span>
+                <span class="color-texto">${e.nombreColor}</span>
+              </div>
             </div>
           </div>`;
       } else {
@@ -159,15 +162,25 @@ const imprimir = () => {
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; width: 100mm; background: #fff; font-family: Arial, sans-serif; }
       .fila { display: flex; flex-direction: row; width: 100mm; height: 40mm; justify-content: space-around; align-items: center; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
-      .etiqueta { width: 30mm; height: 40mm; display: flex; flex-direction: column; align-items: center; justify-content: space-between; overflow: hidden; padding: 1.8mm 1mm; }
-      .precio { font-size: 10px; font-weight: 600; line-height: 1; }
-      .marca { font-size: 15px; font-weight: 900; letter-spacing: 0.6px; text-transform: uppercase; line-height: 1; -webkit-text-stroke: 0.3px #000; }
-      .tipo-prenda { font-size: 8px; font-weight: 500; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .svg-container { width: 100%; display: flex; justify-content: center; }
-      .sku-lectura { font-family: monospace; font-size: 8px; font-weight: 500; line-height: 1; }
-      .footer-etiqueta { display: flex; justify-content: space-between; align-items: baseline; width: 100%; border-top: 1px dashed #000; padding-top: 3px; }
-      .talla-gigante { font-size: 20px; font-weight: 900; line-height: 0.8; }
-      .color-texto { font-size: 9px; font-weight: 900; text-transform: uppercase; -webkit-text-stroke: 0.2px #000; }
+      /* La etiqueta física es 30mm x 40mm. Adentro rotamos el contenido 90°
+         para que el código de barras corra a lo LARGO de los 40mm. */
+      .etiqueta { width: 30mm; height: 40mm; position: relative; overflow: hidden; }
+      .contenido {
+        position: absolute; top: 50%; left: 50%;
+        width: 40mm; height: 30mm;                 /* marco lógico horizontal */
+        transform: translate(-50%, -50%) rotate(-90deg);
+        display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+        padding: 1.5mm 2mm;
+      }
+      .precio { font-size: 11px; font-weight: 700; line-height: 1; }
+      .marca { font-size: 17px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1; -webkit-text-stroke: 0.35px #000; }
+      .tipo-prenda { font-size: 9px; font-weight: 600; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .svg-container { width: 100%; display: flex; justify-content: center; margin: 0.5mm 0; }
+      .svg-container img { image-rendering: crisp-edges; }
+      .sku-lectura { font-family: monospace; font-size: 9px; font-weight: 600; line-height: 1; }
+      .footer-etiqueta { display: flex; justify-content: space-between; align-items: baseline; width: 100%; border-top: 1px dashed #000; padding-top: 2px; }
+      .talla-gigante { font-size: 24px; font-weight: 900; line-height: 0.8; }
+      .color-texto { font-size: 11px; font-weight: 900; text-transform: uppercase; -webkit-text-stroke: 0.2px #000; }
     </style></head><body>${cuerpo}</body></html>`;
 
   try {
