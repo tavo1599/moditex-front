@@ -156,12 +156,10 @@ const imprimir = () => {
     cuerpo += '</div>';
   }
 
-  // 🔧 GAP entre filas de etiquetas (el espacio en blanco del rollo). Si al imprimir
-  // varias filas se siguen desacomodando, ajusta SOLO este número (mide con regla el
-  // blanco entre una etiqueta y la de abajo). Con esto la página del navegador coincide
-  // con el avance real de la impresora y ya no se corre.
-  const GAP_MM = 3;
-  const PITCH = 40 + GAP_MM; // alto real de cada "página" = etiqueta + gap
+  // 🔧 Alto real de cada "página" = etiqueta + gap del rollo. Empieza en 40 (sin gap).
+  // Si al imprimir varias filas se van corriendo, sube este número de a poco (40.5, 41…)
+  // midiendo el blanco entre una etiqueta y la de abajo. Ojo: valores grandes descuadran más.
+  const PITCH = 40;
 
   const html = `
     <html><head><title>Etiquetas</title><style>
