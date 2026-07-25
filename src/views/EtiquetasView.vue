@@ -141,7 +141,7 @@ const imprimir = () => {
               ${e.precio != null ? `<div class="precio">PRECIO S/ ${e.precio.toFixed(2)}</div>` : ''}
               <div class="marca">${e.marca}</div>
               <div class="tipo-prenda">${e.nombreProducto}</div>
-              <div class="svg-container"><img src="${e.img}" style="width:37mm;height:9mm;"></div>
+              <div class="svg-container"><img src="${e.img}" style="width:34mm;height:8mm;"></div>
               <div class="sku-lectura">${e.sku}</div>
               <div class="footer-etiqueta">
                 <span class="talla-gigante">${e.talla}</span>
@@ -169,18 +169,19 @@ const imprimir = () => {
         position: absolute; top: 50%; left: 50%;
         width: 40mm; height: 30mm;                 /* marco lógico horizontal */
         transform: translate(-50%, -50%) rotate(-90deg);
-        display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-        padding: 1.5mm 2mm;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 0.6mm;                                /* separación pareja entre líneas */
+        padding: 1mm 1.5mm;
       }
-      .precio { font-size: 11px; font-weight: 700; line-height: 1; }
-      .marca { font-size: 17px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1; -webkit-text-stroke: 0.35px #000; }
-      .tipo-prenda { font-size: 9px; font-weight: 600; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .svg-container { width: 100%; display: flex; justify-content: center; margin: 0.5mm 0; }
+      .precio { font-size: 9px; font-weight: 700; letter-spacing: 0.3px; line-height: 1; }
+      .marca { font-size: 14px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.05; -webkit-text-stroke: 0.3px #000; }
+      .tipo-prenda { font-size: 7.5px; font-weight: 600; letter-spacing: 0.2px; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .svg-container { width: 100%; display: flex; justify-content: center; }
       .svg-container img { image-rendering: crisp-edges; }
-      .sku-lectura { font-family: monospace; font-size: 9px; font-weight: 600; line-height: 1; }
-      .footer-etiqueta { display: flex; justify-content: space-between; align-items: baseline; width: 100%; border-top: 1px dashed #000; padding-top: 2px; }
-      .talla-gigante { font-size: 24px; font-weight: 900; line-height: 0.8; }
-      .color-texto { font-size: 11px; font-weight: 900; text-transform: uppercase; -webkit-text-stroke: 0.2px #000; }
+      .sku-lectura { font-family: monospace; font-size: 7px; font-weight: 600; letter-spacing: 0.5px; line-height: 1; }
+      .footer-etiqueta { display: flex; justify-content: space-between; align-items: center; width: 100%; border-top: 1px dashed #000; padding-top: 1mm; margin-top: 0.4mm; }
+      .talla-gigante { font-size: 16px; font-weight: 900; line-height: 0.85; }
+      .color-texto { font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; max-width: 20mm; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     </style></head><body>${cuerpo}</body></html>`;
 
   try {
