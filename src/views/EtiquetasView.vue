@@ -169,11 +169,12 @@ const imprimir = () => {
       .fila { display: flex; flex-direction: row; width: 100mm; height: ${PITCH}mm; justify-content: space-around; align-items: flex-start; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
       /* La etiqueta física es 30mm x 40mm. Adentro rotamos el contenido 90°
          para que el código de barras corra a lo LARGO de los 40mm. */
-      .etiqueta { width: 30mm; height: 40mm; position: relative; overflow: hidden; }
+      /* SIN position:absolute (eso se encimaba entre páginas). Centramos con flex
+         y rotamos el contenido; queda contenido en su propia página. */
+      .etiqueta { width: 30mm; height: 40mm; overflow: hidden; display: flex; align-items: center; justify-content: center; }
       .contenido {
-        position: absolute; top: 50%; left: 50%;
-        width: 40mm; height: 30mm;                 /* marco lógico horizontal */
-        transform: translate(-50%, -50%) rotate(-90deg);
+        width: 40mm; height: 30mm; flex: 0 0 auto;  /* marco lógico horizontal */
+        transform: rotate(-90deg);
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         gap: 0.6mm;                                /* separación pareja entre líneas */
         padding: 1mm 1.5mm;
