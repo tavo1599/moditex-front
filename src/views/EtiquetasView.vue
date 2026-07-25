@@ -141,7 +141,7 @@ const imprimir = () => {
               ${e.precio != null ? `<div class="precio">PRECIO S/ ${e.precio.toFixed(2)}</div>` : ''}
               <div class="marca">${e.marca}</div>
               <div class="tipo-prenda">${e.nombreProducto}</div>
-              <div class="svg-container"><img src="${e.img}" style="width:34mm;height:8mm;"></div>
+              <div class="svg-container"><img src="${e.img}" style="width:37mm;height:9mm;"></div>
               <div class="sku-lectura">${e.sku}</div>
               <div class="footer-etiqueta">
                 <span class="talla-gigante">${e.talla}</span>
