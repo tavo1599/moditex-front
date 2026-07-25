@@ -156,12 +156,19 @@ const imprimir = () => {
     cuerpo += '</div>';
   }
 
+  // 🔧 GAP entre filas de etiquetas (el espacio en blanco del rollo). Si al imprimir
+  // varias filas se siguen desacomodando, ajusta SOLO este número (mide con regla el
+  // blanco entre una etiqueta y la de abajo). Con esto la página del navegador coincide
+  // con el avance real de la impresora y ya no se corre.
+  const GAP_MM = 3;
+  const PITCH = 40 + GAP_MM; // alto real de cada "página" = etiqueta + gap
+
   const html = `
     <html><head><title>Etiquetas</title><style>
-      @page { size: 100mm 40mm; margin: 0 !important; }
+      @page { size: 100mm ${PITCH}mm; margin: 0 !important; }
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; width: 100mm; background: #fff; font-family: Arial, sans-serif; }
-      .fila { display: flex; flex-direction: row; width: 100mm; height: 40mm; justify-content: space-around; align-items: center; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
+      .fila { display: flex; flex-direction: row; width: 100mm; height: ${PITCH}mm; justify-content: space-around; align-items: flex-start; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
       /* La etiqueta física es 30mm x 40mm. Adentro rotamos el contenido 90°
          para que el código de barras corra a lo LARGO de los 40mm. */
       .etiqueta { width: 30mm; height: 40mm; position: relative; overflow: hidden; }
