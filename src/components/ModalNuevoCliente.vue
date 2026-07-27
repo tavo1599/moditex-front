@@ -11,7 +11,8 @@ const emit = defineEmits(['close', 'cliente-registrado']);
 
 // Variables locales solo para este modal
 const procesandoCliente = ref(false);
-const formCliente = ref({ nombre: '', documento: '', limiteCredito: 1000 });
+// limiteCredito ya no se pide (crédito ilimitado); se manda un valor alto por compatibilidad
+const formCliente = ref({ nombre: '', documento: '', limiteCredito: 9999999 });
 
 const registrarNuevoCliente = async () => {
   if (!formCliente.value.nombre.trim()) return alert("El nombre o Razón Social es obligatorio.");
@@ -49,11 +50,6 @@ const registrarNuevoCliente = async () => {
         <div>
           <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">DNI / RUC (Opcional)</label>
           <input v-model="formCliente.documento" type="text" placeholder="1045..." class="w-full bg-white border border-gray-200 p-3 rounded-xl font-bold text-gray-700 outline-none focus:border-blue-500" />
-        </div>
-        <div>
-          <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Límite de Crédito (S/)</label>
-          <input v-model.number="formCliente.limiteCredito" type="number" class="w-full bg-white border border-gray-200 p-3 rounded-xl font-black text-blue-600 outline-none focus:border-blue-500 text-lg" />
-          <p class="text-[9px] text-gray-400 font-bold mt-1 uppercase">Monto máximo que el sistema le permitirá deber.</p>
         </div>
       </div>
 

@@ -156,10 +156,15 @@ const enviarVentaBackend = async () => {
     };
 
     const res = await api.post('/ventas', payload);
-    ventaRealizada.value = res.data; 
-    
+    ventaRealizada.value = res.data;
+
+    // 🔄 Recargamos el inventario SIEMPRE apenas se registra la venta, para que la
+    // siguiente venta ya vea el stock actualizado (antes solo se recargaba al cerrar
+    // el ticket, y si no se cerraba bien el stock quedaba viejo → "no hay stock").
+    await cargarDatos();
+
     if (metodoEntrega.value === 'ENTREGA_INMEDIATA' || metodoEntrega.value === 'RECOJO_TIENDA') {
-      modalTicket.value = true; // Abre el modal pero NO limpia la data todavía
+      modalTicket.value = true; // Abre el modal (el carrito se limpia al cerrarlo)
     } else {
       alert("✅ Venta registrada correctamente.");
       limpiarCaja(); // Si es por agencia, limpia de inmediato sin ticket
