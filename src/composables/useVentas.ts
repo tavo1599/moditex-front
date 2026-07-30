@@ -61,25 +61,36 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     if (!sku) return;
 
     // Variables de molde para capturar la prenda venga de donde venga
-    let productoId: number;
-    let nombre: string;
-    let color: string;
-    let talla: string;
-    let stockMaximo: number;
+    let productoId = 0;
+    let nombre = '';
+    let color = '';
+    let talla = '';
+    let stockMaximo = 0;
 
-    try {
-      // 🚀 PLAN A: Intentamos buscar el código QR del proveedor en el endpoint de NestJS
-      const res = await api.get(`/ventas/escanear/${sku}`);
-      const dataBackend = res.data;
+    // Las etiquetas del sistema tienen formato PRD{id}-{color}-{talla}. Esas se
+    // resuelven DIRECTO con el inventario local (no existen en el endpoint de QR
+    // de proveedor, y llamarlo solo generaba un 400 en la consola).
+    const esSkuSistema = /^PRD\d+-/.test(sku);
+    let resuelto = false;
 
-      productoId = Number(dataBackend.productoId);
-      nombre = dataBackend.nombre;
-      color = dataBackend.color;
-      talla = dataBackend.talla;
-      stockMaximo = Number(dataBackend.stockDisponible);
+    if (!esSkuSistema) {
+      try {
+        // 🚀 PLAN A: código de proveedor → lo busca el backend
+        const res = await api.get(`/ventas/escanear/${sku}`);
+        const dataBackend = res.data;
+        productoId = Number(dataBackend.productoId);
+        nombre = dataBackend.nombre;
+        color = dataBackend.color;
+        talla = dataBackend.talla;
+        stockMaximo = Number(dataBackend.stockDisponible);
+        resuelto = true;
+      } catch (error) {
+        resuelto = false; // cae al método local
+      }
+    }
 
-    } catch (error) {
-      // 🔄 PLAN B (Fallback): Si el backend no encuentra el QR, buscamos por el SKU calculado local
+    if (!resuelto) {
+      // 🔄 PLAN B: buscamos por el SKU calculado en el inventario local
       const prendaLocal = inventarioConSKURef.value.find(
         (i: any) => i.skuCalculado === sku && Number(i.bodegaId) === Number(bodegaSeleccionada.value)
       );

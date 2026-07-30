@@ -67,12 +67,25 @@ const totalEtiquetas = computed(() => {
   return s;
 });
 
-// CÓDIGO DE BARRAS como imagen PNG en ALTA resolución (para que al ir a lo largo
-// de los 40mm y rotarlo salga nítido y bien legible por la lectora).
-const barcodeDataUrl = (sku: string): string => {
-  const canvas = document.createElement('canvas');
-  JsBarcode(canvas, sku, { format: 'CODE128', width: 3, height: 80, displayValue: false, margin: 6 });
-  return canvas.toDataURL('image/png');
+// CÓDIGO DE BARRAS como SVG VECTORIAL. Antes era un PNG que el CSS encogía a 37mm:
+// al reescalar un mapa de bits a un factor no entero las barras se fundían y la
+// pistola no leía. El SVG se imprime nítido a cualquier DPI (203 de la térmica)
+// sin interpolación. 'margin' amplio = zona de silencio (quiet zone) que la
+// lectora necesita para enganchar el código.
+const barcodeSvg = (sku: string): string => {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  JsBarcode(svg, sku, { format: 'CODE128', width: 2, height: 40, displayValue: false, margin: 10 });
+  // Convertimos el ancho/alto fijos que pone JsBarcode en un viewBox para poder
+  // escalar el vector a la medida física exacta sin deformar las proporciones.
+  const w = svg.getAttribute('width');
+  const h = svg.getAttribute('height');
+  if (w && h) svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('shape-rendering', 'crispEdges'); // bordes de barra sin antialias
+  svg.setAttribute('style', 'width:38mm;height:9mm;display:block;');
+  return svg.outerHTML;
 };
 
 // Lista plana de etiquetas (sin imagen) de la MATRIZ actual (una sola prenda)
@@ -122,10 +135,10 @@ const imprimir = () => {
   const etiquetas: any[] = [...cola.value.flatMap((l) => l.etiquetas), ...construirEtiquetasActuales()];
   if (!etiquetas.length) return alert('No hay etiquetas para imprimir. Pon cantidades o agrega prendas a la cola.');
 
-  // Generamos el código de barras UNA vez por SKU (cache) y se lo asignamos a cada etiqueta
+  // Generamos el código de barras (SVG) UNA vez por SKU (cache) y se lo asignamos a cada etiqueta
   const imgCache: Record<string, string> = {};
   for (const e of etiquetas) {
-    if (!imgCache[e.sku]) imgCache[e.sku] = barcodeDataUrl(e.sku);
+    if (!imgCache[e.sku]) imgCache[e.sku] = barcodeSvg(e.sku);
     e.img = imgCache[e.sku];
   }
 
@@ -141,7 +154,7 @@ const imprimir = () => {
               ${e.precio != null ? `<div class="precio">PRECIO S/ ${e.precio.toFixed(2)}</div>` : ''}
               <div class="marca">${e.marca}</div>
               <div class="tipo-prenda">${e.nombreProducto}</div>
-              <div class="svg-container"><img src="${e.img}" style="width:37mm;height:9mm;"></div>
+              <div class="svg-container">${e.img}</div>
               <div class="sku-lectura">${e.sku}</div>
               <div class="footer-etiqueta">
                 <span class="talla-gigante">${e.talla}</span>
@@ -183,7 +196,7 @@ const imprimir = () => {
       .marca { font-size: 14px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.05; -webkit-text-stroke: 0.3px #000; }
       .tipo-prenda { font-size: 7.5px; font-weight: 600; letter-spacing: 0.2px; text-transform: uppercase; line-height: 1; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .svg-container { width: 100%; display: flex; justify-content: center; }
-      .svg-container img { image-rendering: crisp-edges; }
+      .svg-container svg { shape-rendering: crispEdges; }
       .sku-lectura { font-family: monospace; font-size: 7px; font-weight: 600; letter-spacing: 0.5px; line-height: 1; }
       .footer-etiqueta { display: flex; justify-content: space-between; align-items: center; width: 100%; border-top: 1px dashed #000; padding-top: 1mm; margin-top: 0.4mm; }
       .talla-gigante { font-size: 16px; font-weight: 900; line-height: 0.85; }
