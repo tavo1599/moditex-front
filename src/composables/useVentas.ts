@@ -67,15 +67,33 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     let talla = '';
     let stockMaximo = 0;
 
-    // Las etiquetas del sistema tienen formato PRD{id}-{color}-{talla}. Esas se
-    // resuelven DIRECTO con el inventario local (no existen en el endpoint de QR
-    // de proveedor, y llamarlo solo generaba un 400 en la consola).
-    const esSkuSistema = /^PRD\d+-/.test(sku);
-    let resuelto = false;
+    // 🔄 PLAN A (local): las etiquetas del sistema se resuelven directo con el
+    // inventario. Reconocemos AMBOS formatos del código de barras:
+    //   • completo  → 'PRD4-MLC-S'  (etiquetas viejas)
+    //   • compacto  → '4MLCS'       (etiquetas nuevas, la mitad de barras)
+    // Comparamos contra el skuCalculado tal cual y también sin 'PRD' ni guiones.
+    const bodega = Number(bodegaSeleccionada.value);
+    const prendaLocal = inventarioConSKURef.value.find((i: any) => {
+      if (Number(i.bodegaId) !== bodega) return false;
+      const full = String(i.skuCalculado || '').toUpperCase();
+      const compacto = full.replace(/^PRD/, '').replace(/-/g, '');
+      return full === sku || compacto === sku;
+    });
 
-    if (!esSkuSistema) {
+    if (prendaLocal) {
+      if (Number(prendaLocal.stock) <= 0) {
+        alert(`La prenda escaneada (${sku}) no cuenta con stock físico disponible en esta bodega.`);
+        codigoEscaneado.value = '';
+        return;
+      }
+      productoId = Number(prendaLocal.productoId || prendaLocal.producto?.id);
+      nombre = prendaLocal.producto?.nombre || 'Producto Genérico';
+      color = prendaLocal.color;
+      talla = prendaLocal.talla;
+      stockMaximo = Number(prendaLocal.stock);
+    } else {
+      // 🚀 PLAN B (backend): no es del sistema → puede ser un QR de proveedor
       try {
-        // 🚀 PLAN A: código de proveedor → lo busca el backend
         const res = await api.get(`/ventas/escanear/${sku}`);
         const dataBackend = res.data;
         productoId = Number(dataBackend.productoId);
@@ -83,29 +101,11 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
         color = dataBackend.color;
         talla = dataBackend.talla;
         stockMaximo = Number(dataBackend.stockDisponible);
-        resuelto = true;
       } catch (error) {
-        resuelto = false; // cae al método local
-      }
-    }
-
-    if (!resuelto) {
-      // 🔄 PLAN B: buscamos por el SKU calculado en el inventario local
-      const prendaLocal = inventarioConSKURef.value.find(
-        (i: any) => i.skuCalculado === sku && Number(i.bodegaId) === Number(bodegaSeleccionada.value)
-      );
-
-      if (!prendaLocal || prendaLocal.stock <= 0) {
         alert(`El producto escaneado o escrito (${sku}) no existe o no cuenta con stock físico disponible.`);
         codigoEscaneado.value = '';
         return;
       }
-
-      productoId = Number(prendaLocal.productoId || prendaLocal.producto?.id);
-      nombre = prendaLocal.producto?.nombre || 'Producto Genérico';
-      color = prendaLocal.color;
-      talla = prendaLocal.talla;
-      stockMaximo = Number(prendaLocal.stock);
     }
 
     // 🎯 VALIDACIÓN INTELIGENTE: Buscamos en el carrito por variante real (ID + Color + Talla)

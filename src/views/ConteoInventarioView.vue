@@ -91,21 +91,23 @@ const procesarEscaneoConteo = async () => {
   if (!code) return;
   if (!bodegaSel.value) { scanError.value = 'Selecciona primero el almacén.'; return; }
 
-  const m = code.match(/^PRD(\d+)-(.+)-([^-]+)$/);
-  if (!m) { scanError.value = `Código no reconocido: ${code}`; scanOk.value = ''; return; }
-  const idProd = Number(m[1]);
-  const colorTok = m[2] || '';
-  const tallaTok = m[3] || '';
+  // Código de color de un item, igual que lo arma la etiqueta (codigoColor)
+  const codColor = (val: string) => {
+    const c = colores.value.find((x) => norm(x.codigo) === norm(val) || norm(x.nombre) === norm(val));
+    return norm(c ? c.codigo : String(val).substring(0, 3));
+  };
 
-  // Buscamos la fila del inventario de esa bodega (color por código o nombre)
+  // Reconocemos AMBOS formatos del código de barras, sin parsear tokens frágiles:
+  //   • completo  → 'PRD4-MLC-S'  (etiquetas viejas)
+  //   • compacto  → '4MLCS'       (etiquetas nuevas)
+  // Para cada fila del inventario armamos su código y lo comparamos.
   const item = itemsBodega.value.find((it: any) => {
-    if (Number(it.productoId) !== idProd) return false;
-    if (norm(it.talla) !== tallaTok) return false;
-    const c = colores.value.find((x) => norm(x.codigo) === norm(it.color) || norm(x.nombre) === norm(it.color));
-    return (
-      norm(it.color) === colorTok ||
-      (!!c && (norm(c.codigo) === colorTok || norm(c.nombre) === colorTok))
-    );
+    const idProd = Number(it.productoId);
+    const cc = codColor(it.color);
+    const talla = norm(it.talla);
+    const full = `PRD${idProd}-${cc}-${talla}`;
+    const compacto = `${idProd}${cc}${talla}`;
+    return code === full || code === compacto;
   });
 
   if (!item) {

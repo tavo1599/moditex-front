@@ -91,8 +91,12 @@ const construirEtiquetasActuales = (): any[] => {
       const cant = Number(f.cant[t]) || 0;
       if (cant < 1) continue;
       const sku = `PRD${prodId}-${cod}-${t}`;
+      // Versión COMPACTA para el código de barras (sin 'PRD' ni guiones): la mitad de
+      // caracteres = la mitad de barras = el doble de espacio entre líneas y lectura
+      // mucho más fácil. El escáner del POS reconoce ambos formatos.
+      const skuBarra = `${prodId}${cod}${t}`.toUpperCase();
       for (let k = 0; k < cant; k++) {
-        out.push({ nombreProducto: nombreProd, nombreColor: nomColor, talla: t, precio, sku, marca: marcaLote });
+        out.push({ nombreProducto: nombreProd, nombreColor: nomColor, talla: t, precio, sku, skuBarra, marca: marcaLote });
       }
     }
   }
@@ -123,11 +127,13 @@ const imprimir = () => {
   const etiquetas: any[] = [...cola.value.flatMap((l) => l.etiquetas), ...construirEtiquetasActuales()];
   if (!etiquetas.length) return alert('No hay etiquetas para imprimir. Pon cantidades o agrega prendas a la cola.');
 
-  // Generamos el código de barras (SVG) UNA vez por SKU (cache) y se lo asignamos a cada etiqueta
+  // Generamos el código de barras (PNG) UNA vez por SKU compacto (cache) y se lo asignamos.
+  // Las etiquetas viejas de la cola pueden no tener skuBarra → usamos el sku completo como respaldo.
   const imgCache: Record<string, string> = {};
   for (const e of etiquetas) {
-    if (!imgCache[e.sku]) imgCache[e.sku] = barcodeDataUrl(e.sku);
-    e.img = imgCache[e.sku];
+    const clave = e.skuBarra || e.sku;
+    if (!imgCache[clave]) imgCache[clave] = barcodeDataUrl(clave);
+    e.img = imgCache[clave];
   }
 
   let cuerpo = '';
@@ -142,7 +148,7 @@ const imprimir = () => {
               ${e.precio != null ? `<div class="precio">PRECIO S/ ${e.precio.toFixed(2)}</div>` : ''}
               <div class="marca">${e.marca}</div>
               <div class="tipo-prenda">${e.nombreProducto}</div>
-              <div class="svg-container"><img src="${e.img}" style="width:38mm;height:12mm;"></div>
+              <div class="svg-container"><img src="${e.img}" style="width:37mm;height:10mm;"></div>
               <div class="sku-lectura">${e.sku}</div>
               <div class="footer-etiqueta">
                 <span class="talla-gigante">${e.talla}</span>
