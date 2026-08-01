@@ -2,6 +2,10 @@
 import { ref, onMounted, computed } from 'vue';
 import api from '../api/axios';
 import JsBarcode from 'jsbarcode';
+import DisenadorEtiquetas from '../components/DisenadorEtiquetas.vue';
+
+// Pestañas: generador rápido (matriz) o diseñador libre (arrastrar y soltar)
+const modo = ref<'matriz' | 'disenador'>('matriz');
 
 const productos = ref<any[]>([]);
 const colores = ref<any[]>([]);
@@ -229,9 +233,28 @@ onMounted(cargar);
   <div class="space-y-6">
     <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
       <h2 class="text-3xl font-bold text-gray-800">🏷️ Impresión de Etiquetas</h2>
-      <p class="text-gray-500 mt-1">Elige producto, marca y precio; agrega colores y pon las cantidades por talla en la tabla. Papel 100mm, 3 etiquetas de 30mm por fila.</p>
+      <p class="text-gray-500 mt-1">Genera etiquetas rápido con la tabla, o crea un diseño propio con el editor libre.</p>
+
+      <!-- PESTAÑAS -->
+      <div class="mt-4 inline-flex bg-gray-100 rounded-xl p-1">
+        <button
+          @click="modo = 'matriz'"
+          :class="modo === 'matriz' ? 'bg-white shadow text-gray-900' : 'text-gray-500'"
+          class="px-5 py-2 rounded-lg font-bold text-sm transition-all"
+        >📋 Generador rápido</button>
+        <button
+          @click="modo = 'disenador'"
+          :class="modo === 'disenador' ? 'bg-white shadow text-gray-900' : 'text-gray-500'"
+          class="px-5 py-2 rounded-lg font-bold text-sm transition-all"
+        >🎨 Diseñador libre</button>
+      </div>
     </div>
 
+    <!-- ===================== DISEÑADOR LIBRE ===================== -->
+    <DisenadorEtiquetas v-if="modo === 'disenador'" />
+
+    <!-- ===================== GENERADOR RÁPIDO (MATRIZ) ===================== -->
+    <template v-else>
     <!-- CONFIGURACIÓN GENERAL -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
       <div>
@@ -352,5 +375,6 @@ onMounted(cargar);
         <p class="text-xs text-gray-500 pt-1">Total en la cola: <b>{{ totalCola }}</b> · Prenda actual sin agregar: <b>{{ totalEtiquetas }}</b> · "Imprimir todo" imprime ambas.</p>
       </div>
     </div>
+    </template>
   </div>
 </template>
