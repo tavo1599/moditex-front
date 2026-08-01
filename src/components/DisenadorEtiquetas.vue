@@ -23,6 +23,7 @@ interface Elemento {
   italic?: boolean;
   align?: 'left' | 'center' | 'right';
   color?: string;
+  rot?: number; // rotación del elemento en grados
 }
 
 const SCALE = 9; // px por mm en pantalla
@@ -32,8 +33,14 @@ const anchoMM = ref(30);
 const altoMM = ref(40);
 const columnas = ref(3); // etiquetas por fila al imprimir (rollo de 100mm ≈ 3 de 30mm)
 const cantidad = ref(3); // cuántas copias imprimir
+const labelRot = ref(0); // rotación de TODA la etiqueta (0/90/180/270)
 const elementos = ref<Elemento[]>([]);
 const seleccionadoId = ref<number | null>(null);
+
+// ¿La etiqueta está girada 90° o 270°? (su huella física intercambia ancho/alto)
+const rotada = computed(() => labelRot.value % 180 !== 0);
+const huellaW = computed(() => (rotada.value ? altoMM.value : anchoMM.value));
+const huellaH = computed(() => (rotada.value ? anchoMM.value : altoMM.value));
 
 let seqId = 1;
 const nuevoId = () => seqId++;
@@ -56,6 +63,7 @@ const guardar = () => {
     localStorage.setItem(KEY, JSON.stringify({
       anchoMM: anchoMM.value, altoMM: altoMM.value,
       columnas: columnas.value, cantidad: cantidad.value,
+      labelRot: labelRot.value,
       elementos: elementos.value,
     }));
   } catch { /* sin storage */ }
@@ -80,6 +88,7 @@ const cargarDiseno = () => {
       altoMM.value = d.altoMM || 40;
       columnas.value = d.columnas || 3;
       cantidad.value = d.cantidad || 3;
+      labelRot.value = d.labelRot || 0;
       elementos.value = Array.isArray(d.elementos) ? d.elementos : [];
       seqId = elementos.value.reduce((m, e) => Math.max(m, e.id), 0) + 1;
     } else {
@@ -145,16 +154,30 @@ const onPointerMove = (e: PointerEvent) => {
   if (!drag) return;
   const el = elementos.value.find((x) => x.id === drag!.id);
   if (!el) return;
-  const dxmm = (e.clientX - drag.px) / SCALE;
-  const dymm = (e.clientY - drag.py) / SCALE;
+  // Desplazamiento en pantalla → lo pasamos al sistema LOCAL de la etiqueta
+  // (compensando la rotación de la etiqueta para que arrastrar se sienta natural).
+  const sdx = (e.clientX - drag.px) / SCALE;
+  const sdy = (e.clientY - drag.py) / SCALE;
+  const rad = (labelRot.value * Math.PI) / 180;
+  const ca = Math.cos(rad), sa = Math.sin(rad);
+  const dxmm = sdx * ca + sdy * sa;
+  const dymm = -sdx * sa + sdy * ca;
   if (drag.mode === 'move') {
     el.x = clamp(drag.ox + dxmm, 0, Math.max(0, anchoMM.value - 1));
     el.y = clamp(drag.oy + dymm, 0, Math.max(0, altoMM.value - 1));
   } else {
     el.w = Math.max(2, drag.ow + dxmm);
-    if (el.tipo === 'codigo' || el.tipo === 'marco') el.h = Math.max(2, drag.oh + dymm);
-    else if (el.tipo === 'texto') el.h = Math.max(2, drag.oh + dymm);
+    if (el.tipo === 'codigo' || el.tipo === 'marco' || el.tipo === 'texto') el.h = Math.max(2, drag.oh + dymm);
   }
+};
+
+// Girar TODA la etiqueta en pasos de 90°
+const girarEtiqueta = () => { labelRot.value = (labelRot.value + 90) % 360; guardar(); };
+// Girar el elemento seleccionado en pasos de 15° (o 90° con el botón)
+const rotarElemento = (grados: number) => {
+  const s = seleccionado.value; if (!s) return;
+  s.rot = (((s.rot || 0) + grados) % 360 + 360) % 360;
+  guardar();
 };
 const onPointerUp = () => {
   drag = null;
@@ -188,26 +211,37 @@ const estiloPantalla = (el: Elemento) => {
   } else if (el.tipo === 'codigo') {
     base.height = el.h * SCALE + 'px';
   }
+  if (el.rot) {
+    base.transform = `rotate(${el.rot}deg)`;
+    base.transformOrigin = 'center';
+  }
   return base;
 };
 
 // ---- Imprimir ----
 const construirLabelHTML = () => {
-  let html = `<div class="label">`;
+  // Contenido de la etiqueta en su tamaño base (ancho×alto), luego lo rotamos como bloque.
+  let inner = '';
   for (const el of elementos.value) {
+    const rotEl = el.rot ? `transform:rotate(${el.rot}deg);transform-origin:center;` : '';
     const pos = `position:absolute;left:${el.x}mm;top:${el.y}mm;`;
     if (el.tipo === 'texto') {
-      html += `<div style="${pos}width:${el.w}mm;font-size:${el.fontMM || 3}mm;font-weight:${el.bold ? 800 : 400};font-style:${el.italic ? 'italic' : 'normal'};text-align:${el.align || 'center'};color:${el.color || '#000'};line-height:1;overflow:hidden;">${(el.texto || '').replace(/</g, '&lt;')}</div>`;
+      inner += `<div style="${pos}width:${el.w}mm;font-size:${el.fontMM || 3}mm;font-weight:${el.bold ? 800 : 400};font-style:${el.italic ? 'italic' : 'normal'};text-align:${el.align || 'center'};color:${el.color || '#000'};line-height:1;overflow:hidden;${rotEl}">${(el.texto || '').replace(/</g, '&lt;')}</div>`;
     } else if (el.tipo === 'linea') {
-      html += `<div style="${pos}width:${el.w}mm;height:${el.h}mm;background:${el.color || '#000'};"></div>`;
+      inner += `<div style="${pos}width:${el.w}mm;height:${el.h}mm;background:${el.color || '#000'};${rotEl}"></div>`;
     } else if (el.tipo === 'marco') {
-      html += `<div style="${pos}width:${el.w}mm;height:${el.h}mm;border:0.3mm solid ${el.color || '#000'};box-sizing:border-box;"></div>`;
+      inner += `<div style="${pos}width:${el.w}mm;height:${el.h}mm;border:0.3mm solid ${el.color || '#000'};box-sizing:border-box;${rotEl}"></div>`;
     } else if (el.tipo === 'codigo') {
-      html += `<div style="${pos}width:${el.w}mm;height:${el.h}mm;"><img src="${barcodeImg.value}" style="width:100%;height:100%;image-rendering:crisp-edges;"></div>`;
+      inner += `<div style="${pos}width:${el.w}mm;height:${el.h}mm;${rotEl}"><img src="${barcodeImg.value}" style="width:100%;height:100%;image-rendering:crisp-edges;"></div>`;
     }
   }
-  html += `</div>`;
-  return html;
+  // Caja base centrada dentro de la huella y rotada como bloque completo.
+  const offX = (huellaW.value - anchoMM.value) / 2;
+  const offY = (huellaH.value - altoMM.value) / 2;
+  const rotLbl = labelRot.value ? `transform:rotate(${labelRot.value}deg);transform-origin:center;` : '';
+  return `<div class="label">`
+    + `<div style="position:absolute;left:${offX}mm;top:${offY}mm;width:${anchoMM.value}mm;height:${altoMM.value}mm;${rotLbl}">${inner}</div>`
+    + `</div>`;
 };
 
 const imprimir = () => {
@@ -215,7 +249,9 @@ const imprimir = () => {
   const total = Math.max(1, Number(cantidad.value) || 1);
   const cols = Math.max(1, Number(columnas.value) || 1);
   const labelHTML = construirLabelHTML();
-  const anchoFila = cols * anchoMM.value;
+  const fW = huellaW.value; // huella física (ya considera si la etiqueta está girada)
+  const fH = huellaH.value;
+  const anchoFila = cols * fW;
 
   let cuerpo = '';
   for (let i = 0; i < total; i += cols) {
@@ -228,11 +264,11 @@ const imprimir = () => {
 
   const doc = `
     <html><head><meta charset="utf-8"><style>
-      @page { size: ${anchoFila}mm ${altoMM.value}mm; margin: 0 !important; }
+      @page { size: ${anchoFila}mm ${fH}mm; margin: 0 !important; }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       html, body { margin: 0; padding: 0; background: #fff; font-family: Arial, Helvetica, sans-serif; }
-      .fila { display: flex; flex-direction: row; width: ${anchoFila}mm; height: ${altoMM.value}mm; page-break-after: always; }
-      .label { position: relative; width: ${anchoMM.value}mm; height: ${altoMM.value}mm; overflow: hidden; box-sizing: border-box; }
+      .fila { display: flex; flex-direction: row; width: ${anchoFila}mm; height: ${fH}mm; page-break-after: always; }
+      .label { position: relative; width: ${fW}mm; height: ${fH}mm; overflow: hidden; box-sizing: border-box; }
     </style></head><body>${cuerpo}</body></html>`;
 
   const iframe = document.createElement('iframe');
@@ -270,10 +306,23 @@ onBeforeUnmount(() => { window.removeEventListener('pointermove', onPointerMove)
 
       <!-- Área del lienzo -->
       <div class="flex justify-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200 overflow-auto">
+        <!-- Huella física (puede intercambiar ancho/alto si la etiqueta está girada) -->
         <div
-          class="relative bg-white shadow-md select-none"
-          :style="{ width: anchoMM * SCALE + 'px', height: altoMM * SCALE + 'px' }"
+          class="relative select-none"
+          :style="{ width: huellaW * SCALE + 'px', height: huellaH * SCALE + 'px' }"
           @click="onCanvasClick"
+        >
+        <!-- Etiqueta base, centrada dentro de la huella y rotada como bloque -->
+        <div
+          class="absolute bg-white shadow-md"
+          :style="{
+            width: anchoMM * SCALE + 'px',
+            height: altoMM * SCALE + 'px',
+            left: (huellaW - anchoMM) / 2 * SCALE + 'px',
+            top: (huellaH - altoMM) / 2 * SCALE + 'px',
+            transform: labelRot ? 'rotate(' + labelRot + 'deg)' : 'none',
+            transformOrigin: 'center',
+          }"
         >
           <template v-for="el in elementos" :key="el.id">
             <div
@@ -295,10 +344,11 @@ onBeforeUnmount(() => { window.removeEventListener('pointermove', onPointerMove)
             </div>
           </template>
         </div>
+        </div>
       </div>
 
       <p class="text-center text-xs text-gray-400 mt-3">
-        Etiqueta {{ anchoMM }} × {{ altoMM }} mm · Arrastra los elementos · Toca uno para editarlo a la derecha
+        Etiqueta {{ anchoMM }} × {{ altoMM }} mm{{ labelRot ? ' · girada ' + labelRot + '°' : '' }} · Arrastra los elementos · Toca uno para editarlo
       </p>
     </div>
 
@@ -321,6 +371,9 @@ onBeforeUnmount(() => { window.removeEventListener('pointermove', onPointerMove)
             <input v-model.number="cantidad" @change="guardar" type="number" min="1" class="mt-1 w-full border border-gray-300 rounded-lg p-2 text-sm">
           </label>
         </div>
+        <button @click="girarEtiqueta" class="w-full border border-gray-300 text-gray-700 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-50">
+          ⟳ Girar etiqueta 90° <span class="text-gray-400">(actual: {{ labelRot }}°)</span>
+        </button>
         <button @click="imprimir" class="w-full bg-blue-600 text-white py-3 rounded-xl font-black hover:bg-blue-700 shadow-lg shadow-blue-500/20">🖨️ Imprimir ({{ cantidad }})</button>
       </div>
 
@@ -378,6 +431,18 @@ onBeforeUnmount(() => { window.removeEventListener('pointermove', onPointerMove)
               <input v-model.number="seleccionado.h" @input="guardar" type="range" min="5" :max="altoMM" step="0.5" class="mt-1 w-full">
             </label>
           </template>
+
+          <!-- ROTACIÓN del elemento (común) -->
+          <div class="pt-2 border-t border-gray-100">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] font-bold text-gray-500 uppercase">Rotación ({{ seleccionado.rot || 0 }}°)</span>
+              <div class="flex gap-1">
+                <button @click="rotarElemento(-90)" class="px-2 py-1 bg-gray-100 rounded text-xs font-bold hover:bg-gray-200">⟲ 90</button>
+                <button @click="rotarElemento(90)" class="px-2 py-1 bg-gray-100 rounded text-xs font-bold hover:bg-gray-200">⟳ 90</button>
+              </div>
+            </div>
+            <input :value="seleccionado.rot || 0" @input="seleccionado.rot = Number(($event.target as HTMLInputElement).value); guardar()" type="range" min="0" max="359" step="1" class="mt-1 w-full">
+          </div>
 
           <!-- POSICIÓN (común) -->
           <div class="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
