@@ -64,6 +64,11 @@
       </div>
     </div>
 
+    <!-- REPORTE DE STOCK POR PRENDA (talla x color) -->
+    <div class="mb-10">
+      <ReportePorPrenda />
+    </div>
+
     <div class="bg-white rounded-2xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-gray-100 overflow-hidden">
       <div class="px-6 py-5 border-b border-gray-100">
         <h3 class="text-lg font-bold text-gray-900">Últimas Transacciones</h3>
@@ -296,6 +301,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import api from '../api/axios';
+import ReportePorPrenda from '../components/reportes/ReportePorPrenda.vue';
 
 const ventas = ref([]);
 const cargando = ref(false); // 🔥 Nuevo estado para mejorar UX
