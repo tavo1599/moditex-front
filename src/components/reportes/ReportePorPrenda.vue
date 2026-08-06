@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import api from '../../api/axios';
+import { ordenarTallas } from '../../utils/tallas';
 
 const inventario = ref<any[]>([]);
 const bodegas = ref<any[]>([]);
@@ -41,18 +42,6 @@ const getHexColor = (cod: string) => {
   const c = getColorObj(cod);
   return c?.hex || c?.codigoHex || '#e5e7eb';
 };
-
-// Orden natural de tallas (letras primero, luego numéricas)
-const ORDEN_TALLAS = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', '4XL', 'UNICA', 'ÚNICA'];
-const pesoTalla = (t: string) => {
-  const key = String(t || '').trim().toUpperCase();
-  const idx = ORDEN_TALLAS.indexOf(key);
-  if (idx !== -1) return idx;
-  const num = parseFloat(key.replace(',', '.'));
-  return !isNaN(num) ? 1000 + num : 5000;
-};
-const ordenarTallas = (tallas: string[]) =>
-  [...tallas].sort((a, b) => pesoTalla(a) - pesoTalla(b) || String(a).localeCompare(String(b)));
 
 // --- Listado de prendas disponibles ---
 const prendas = computed(() => {

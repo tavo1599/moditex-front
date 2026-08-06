@@ -11,6 +11,18 @@ const leerBodegaGuardada = (): number | '' => {
   } catch { return ''; }
 };
 
+// 💾 Borrador de la venta en curso. Antes el carrito solo vivía en memoria: si se
+// recargaba la página, se iba la luz o el navegador se cerraba, se perdía todo lo
+// cargado y había que volver a marcar prenda por prenda. Ahora se guarda en cada
+// cambio y se restaura al volver a abrir la caja.
+const CLAVE_BORRADOR = 'pv_borrador_venta';
+const leerBorrador = (): any => {
+  try {
+    const crudo = localStorage.getItem(CLAVE_BORRADOR);
+    return crudo ? JSON.parse(crudo) : null;
+  } catch { return null; }
+};
+
 export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (carrito: any[]) => void) {
   const bodegaSeleccionada = ref<number | ''>(leerBodegaGuardada());
 
@@ -22,24 +34,61 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     } catch { /* sin storage disponible */ }
   });
 
+  const borrador = leerBorrador();
+
   const codigoEscaneado = ref('');
-  const carrito = ref<any[]>([]);
+  const carrito = ref<any[]>(borrador?.carrito ?? []);
   const inputEscaner = ref<HTMLInputElement | null>(null);
 
   // Estados de crédito
-  const condicionPago = ref('CONTADO'); 
-  const clienteId = ref<number | null>(null);
-  const adelanto = ref<number | null>(null);
+  const condicionPago = ref(borrador?.condicionPago ?? 'CONTADO');
+  const clienteId = ref<number | null>(borrador?.clienteId ?? null);
+  const adelanto = ref<number | null>(borrador?.adelanto ?? null);
   const numeroCuotas = ref(1);
   const frecuenciaPago = ref('SEMANAL');
 
   // Estados de la venta
-  const clienteNombre = ref('');
-  const tipoVenta = ref('MINORISTA');
-  const metodoEntrega = ref('ENTREGA_INMEDIATA'); 
-  const destinoEnvio = ref('');
+  const clienteNombre = ref(borrador?.clienteNombre ?? '');
+  const tipoVenta = ref(borrador?.tipoVenta ?? 'MINORISTA');
+  const metodoEntrega = ref(borrador?.metodoEntrega ?? 'ENTREGA_INMEDIATA');
+  const destinoEnvio = ref(borrador?.destinoEnvio ?? '');
   const modalTicket = ref(false);
   const ventaRealizada = ref<any>(null);
+
+  /** true si al abrir la caja se recuperó una venta a medio armar. */
+  const borradorRecuperado = ref(Boolean(borrador?.carrito?.length));
+
+  const guardarBorrador = () => {
+    try {
+      if (carrito.value.length === 0 && !clienteNombre.value) {
+        localStorage.removeItem(CLAVE_BORRADOR);
+        return;
+      }
+      localStorage.setItem(CLAVE_BORRADOR, JSON.stringify({
+        carrito: carrito.value,
+        condicionPago: condicionPago.value,
+        clienteId: clienteId.value,
+        clienteNombre: clienteNombre.value,
+        adelanto: adelanto.value,
+        tipoVenta: tipoVenta.value,
+        metodoEntrega: metodoEntrega.value,
+        destinoEnvio: destinoEnvio.value,
+        guardadoEn: new Date().toISOString()
+      }));
+    } catch { /* sin storage disponible */ }
+  };
+
+  const limpiarBorrador = () => {
+    borradorRecuperado.value = false;
+    try { localStorage.removeItem(CLAVE_BORRADOR); } catch { /* noop */ }
+  };
+
+  // Cualquier cambio en la venta en curso se persiste de inmediato.
+  watch(
+    [carrito, condicionPago, clienteId, clienteNombre, adelanto, tipoVenta, metodoEntrega, destinoEnvio],
+    guardarBorrador,
+    { deep: true }
+  );
 
   const totalPagar = computed(() => {
     return carrito.value.reduce((sum, item) => sum + (item.cantidad * item.precioUnitario), 0);
@@ -48,6 +97,22 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
   const saldoPendiente = computed(() => {
     return totalPagar.value - (Number(adelanto.value) || 0);
   });
+
+  // El stock del sistema y el físico se desfasan seguido. Bloquear la venta por eso
+  // hacía que el vendedor la apuntara en papel (y se perdiera). Preferimos registrar
+  // la venta real y marcar la variante para revisión de inventario.
+  const confirmarVentaSinStock = (referencia: string) =>
+    confirm(
+      `⚠️ El sistema marca 0 unidades de ${referencia} en esta bodega.\n\n` +
+      `Si la prenda la tienes físicamente, acepta: la venta se registra igual y la ` +
+      `variante queda marcada para revisar el inventario.\n\n¿Vender de todas formas?`
+    );
+
+  const confirmarExcesoStock = (disponible: number) =>
+    confirm(
+      `⚠️ El sistema solo registra ${disponible} unidad(es) disponible(s).\n\n` +
+      `¿Agregar una más de todas formas? Quedará marcada para revisar el inventario.`
+    );
 
   // 🔥 CONVERTIMOS A ASYNC PARA PODER CONECTARSE CON EL BACKEND EN TIEMPO REAL
   const procesarEscaneo = async () => {
@@ -81,8 +146,10 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     });
 
     if (prendaLocal) {
-      if (Number(prendaLocal.stock) <= 0) {
-        alert(`La prenda escaneada (${sku}) no cuenta con stock físico disponible en esta bodega.`);
+      // El sistema puede estar desfasado del físico. Antes esto BLOQUEABA la venta:
+      // el vendedor tenía la prenda en la mano y no podía cobrarla, así que la
+      // anotaba en papel y esa venta se perdía. Ahora se avisa y se deja decidir.
+      if (Number(prendaLocal.stock) <= 0 && !confirmarVentaSinStock(sku)) {
         codigoEscaneado.value = '';
         return;
       }
@@ -116,10 +183,13 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
 
     if (itemEnCarrito) {
       if (itemEnCarrito.cantidad + 1 > stockMaximo) {
-        alert("Atención: No puedes superar el stock máximo disponible en el almacén.");
-      } else {
-        itemEnCarrito.cantidad++;
+        if (!confirmarExcesoStock(stockMaximo)) {
+          codigoEscaneado.value = '';
+          return;
+        }
+        itemEnCarrito.stockForzado = true;
       }
+      itemEnCarrito.cantidad++;
     } else {
       // Buscamos el precio base configurado de forma local para no perder la reactividad
       const referenciaPrenda = inventarioConSKURef.value.find(
@@ -135,7 +205,8 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
         talla: talla,
         cantidad: 1,
         stockMaximo: stockMaximo,
-        precioUnitario: precioVentaBase 
+        stockForzado: stockMaximo <= 0,
+        precioUnitario: precioVentaBase
       });
     }
     
@@ -154,7 +225,8 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
   // Útil cuando la etiqueta está rota, borrosa o despegada.
   const agregarPrendaManual = (prenda: any) => {
     if (!bodegaSeleccionada.value) return alert('Selecciona una bodega primero.');
-    if (!prenda || Number(prenda.stock) <= 0) return alert('Esa prenda no tiene stock disponible.');
+    if (!prenda) return;
+    if (Number(prenda.stock) <= 0 && !confirmarVentaSinStock(prenda.producto?.nombre || 'esta prenda')) return;
 
     const productoId = Number(prenda.productoId || prenda.producto?.id);
     const nombre = prenda.producto?.nombre || 'Producto';
@@ -168,7 +240,8 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
 
     if (itemEnCarrito) {
       if (itemEnCarrito.cantidad + 1 > stockMaximo) {
-        return alert('Atención: No puedes superar el stock máximo disponible en el almacén.');
+        if (!confirmarExcesoStock(stockMaximo)) return;
+        itemEnCarrito.stockForzado = true;
       }
       itemEnCarrito.cantidad++;
     } else {
@@ -180,6 +253,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
         talla,
         cantidad: 1,
         stockMaximo,
+        stockForzado: stockMaximo <= 0,
         precioUnitario: prenda.producto?.precioVenta || 0,
       });
     }
@@ -197,6 +271,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     bodegaSeleccionada, codigoEscaneado, carrito, inputEscaner,
     condicionPago, clienteId, adelanto, numeroCuotas, frecuenciaPago,
     clienteNombre, tipoVenta, metodoEntrega, destinoEnvio, modalTicket, ventaRealizada,
-    totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual
+    totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual,
+    borradorRecuperado, limpiarBorrador
   };
 }

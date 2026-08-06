@@ -4,10 +4,13 @@ import api from '../api/axios';
 import QrcodeVue from 'qrcode.vue'; 
 import { useScanner } from '../composables/useScanner';
 import { useVentas } from '../composables/useVentas';
+import { useColaVentas } from '../composables/useColaVentas';
 
 // 🔥 Importamos nuestros nuevos componentes modulares
 import ModalNuevoCliente from '../components/ModalNuevoCliente.vue';
 import ModalTicketVenta from '../components/ModalTicketVenta.vue';
+import PanelVentasPendientes from '../components/ventas/PanelVentasPendientes.vue';
+import GrillaPrendas from '../components/ventas/GrillaPrendas.vue';
 
 interface Cliente {
   id: number;
@@ -56,8 +59,11 @@ const {
   bodegaSeleccionada, codigoEscaneado, carrito, inputEscaner,
   condicionPago, clienteId, adelanto, numeroCuotas, frecuenciaPago,
   clienteNombre, tipoVenta, metodoEntrega, destinoEnvio, modalTicket, ventaRealizada,
-  totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual
+  totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual,
+  borradorRecuperado, limpiarBorrador
 } = useVentas(inventarioConSKU, (carritoActual) => emitirSincronizacion(carritoActual));
+
+const { enviarVenta } = useColaVentas();
 
 // Muestra el NOMBRE del color (los vendedores no manejan códigos como "NGR")
 const nombreColor = (val: any) => {
@@ -82,6 +88,14 @@ const seleccionarPrenda = (prenda: any) => {
   agregarPrendaManual(prenda);
   busquedaManual.value = '';
 };
+
+// 🎯 Pestaña activa del panel principal. Arranca en la grilla táctil: es el flujo
+// normal de venta ahora que la pistola dejó de ser confiable.
+const pestana = ref<'grilla' | 'carrito'>('grilla');
+
+// Al agregar desde la grilla, en móvil el carrito no se ve; un contador en la
+// pestaña da el feedback sin sacar al vendedor de la grilla.
+const agregarDesdeGrilla = (prenda: any) => agregarPrendaManual(prenda);
 
 const { pinConexion, movilVinculado, mostrarVinculacion, urlVinculacion, emitirSincronizacion } = useScanner(
   () => procesarEscaneo(),
@@ -111,7 +125,8 @@ const limpiarCaja = () => {
   clienteId.value = null;
   adelanto.value = null;
   condicionPago.value = 'CONTADO';
-  cargarDatos(); 
+  limpiarBorrador();
+  cargarDatos();
   emitirSincronizacion([]);
 };
 
@@ -132,46 +147,70 @@ const enviarVentaBackend = async () => {
     return alert("⚠️ Debes seleccionar un cliente registrado para ventas al crédito.");
   }
 
-  try {
-    const payload = {
-      almacenId: Number(bodegaSeleccionada.value), 
-      cliente: clienteNombre.value || 'Cliente de Mostrador',
-      clienteNombre: clienteNombre.value || 'Cliente de Mostrador', 
-      tipoVenta: tipoVenta.value,
-      metodoEntrega: metodoEntrega.value,
-      requiereEnvio: metodoEntrega.value === 'ENVIO_AGENCIA',
-      destinoEnvio: metodoEntrega.value === 'ENVIO_AGENCIA' ? destinoEnvio.value : undefined,
-      detalles: carrito.value.map(c => ({
-        productoId: Number(c.productoId),
-        color: String(c.color),
-        talla: String(c.talla),
-        cantidad: Number(c.cantidad),
-        precioUnitario: Number(c.precioUnitario) 
-      })),
-      condicionPago: condicionPago.value,
-      clienteId: clienteId.value ? Number(clienteId.value) : undefined,
-      adelanto: Number(adelanto.value) || 0,
-      numeroCuotas: Number(numeroCuotas.value) || 1,
-      frecuenciaPago: frecuenciaPago.value
-    };
+  const payload = {
+    almacenId: Number(bodegaSeleccionada.value),
+    cliente: clienteNombre.value || 'Cliente de Mostrador',
+    clienteNombre: clienteNombre.value || 'Cliente de Mostrador',
+    tipoVenta: tipoVenta.value,
+    metodoEntrega: metodoEntrega.value,
+    requiereEnvio: metodoEntrega.value === 'ENVIO_AGENCIA',
+    destinoEnvio: metodoEntrega.value === 'ENVIO_AGENCIA' ? destinoEnvio.value : undefined,
+    detalles: carrito.value.map(c => ({
+      productoId: Number(c.productoId),
+      color: String(c.color),
+      talla: String(c.talla),
+      cantidad: Number(c.cantidad),
+      precioUnitario: Number(c.precioUnitario)
+    })),
+    condicionPago: condicionPago.value,
+    clienteId: clienteId.value ? Number(clienteId.value) : undefined,
+    adelanto: Number(adelanto.value) || 0,
+    numeroCuotas: Number(numeroCuotas.value) || 1,
+    frecuenciaPago: frecuenciaPago.value
+  };
 
-    const res = await api.post('/ventas', payload);
-    ventaRealizada.value = res.data;
+  // Resumen legible para poder identificar la venta si queda en la cola de pendientes.
+  const resumen = {
+    cliente: clienteNombre.value || 'Cliente de Mostrador',
+    total: totalPagar.value,
+    items: carrito.value.reduce((s, c) => s + Number(c.cantidad || 0), 0),
+    bodega: bodegas.value.find(b => Number(b.id) === Number(bodegaSeleccionada.value))?.nombre || '—'
+  };
 
-    // 🔄 Recargamos el inventario SIEMPRE apenas se registra la venta, para que la
-    // siguiente venta ya vea el stock actualizado (antes solo se recargaba al cerrar
-    // el ticket, y si no se cerraba bien el stock quedaba viejo → "no hay stock").
-    await cargarDatos();
+  const resultado = await enviarVenta(payload, resumen);
 
-    if (metodoEntrega.value === 'ENTREGA_INMEDIATA' || metodoEntrega.value === 'RECOJO_TIENDA') {
-      modalTicket.value = true; // Abre el modal (el carrito se limpia al cerrarlo)
-    } else {
-      alert("✅ Venta registrada correctamente.");
-      limpiarCaja(); // Si es por agencia, limpia de inmediato sin ticket
-    }
+  // ⛔ El servidor rechazó la venta por un motivo real (sin stock, datos inválidos).
+  // No se encola porque reintentar daría el mismo error: el carrito se queda intacto
+  // para que el vendedor corrija y vuelva a intentar.
+  if (!resultado.ok && !resultado.encolada) {
+    alert('Error: ' + resultado.mensaje);
+    return;
+  }
 
-  } catch (error: any) {
-    alert("Error: " + (error.response?.data?.message || "Error desconocido"));
+  // 🛟 No hubo conexión, pero la venta NO se pierde: quedó guardada en este equipo
+  // y se reintenta sola. La caja se libera para poder seguir atendiendo.
+  if (!resultado.ok) {
+    alert(
+      '⚠️ No hay conexión con el servidor.\n\n' +
+      'La venta quedó GUARDADA en este equipo y se enviará sola apenas vuelva el internet.\n' +
+      'Puedes seguir vendiendo normalmente. No cierres sesión ni borres los datos del navegador.'
+    );
+    limpiarCaja();
+    return;
+  }
+
+  ventaRealizada.value = resultado.data;
+
+  // 🔄 Recargamos el inventario SIEMPRE apenas se registra la venta, para que la
+  // siguiente venta ya vea el stock actualizado (antes solo se recargaba al cerrar
+  // el ticket, y si no se cerraba bien el stock quedaba viejo → "no hay stock").
+  await cargarDatos();
+
+  if (metodoEntrega.value === 'ENTREGA_INMEDIATA' || metodoEntrega.value === 'RECOJO_TIENDA') {
+    modalTicket.value = true; // Abre el modal (el carrito se limpia al cerrarlo)
+  } else {
+    alert("✅ Venta registrada correctamente.");
+    limpiarCaja(); // Si es por agencia, limpia de inmediato sin ticket
   }
 };
 
@@ -198,8 +237,21 @@ onMounted(() => {
       </div>
     </header>
 
+    <!-- 🛟 Ventas que no se pudieron enviar: quedan guardadas aquí hasta que salgan -->
+    <PanelVentasPendientes />
+
+    <!-- 💾 Aviso de venta recuperada tras un cierre inesperado -->
+    <div v-if="borradorRecuperado && carrito.length" class="rounded-2xl border-2 border-blue-200 bg-blue-50 px-5 py-3 flex flex-wrap items-center justify-between gap-3">
+      <p class="text-sm font-bold text-blue-900">
+        💾 Se recuperó una venta a medio armar ({{ carrito.length }} ítem{{ carrito.length === 1 ? '' : 's' }}). Revísala antes de cobrar.
+      </p>
+      <button @click="borradorRecuperado = false" class="text-[10px] font-black uppercase tracking-wider text-blue-700 hover:text-blue-900 border border-blue-200 px-3 py-1.5 rounded-lg">
+        Entendido
+      </button>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      
+
       <!-- En móvil usamos display:contents para poder intercalar el carrito entre estas tarjetas -->
       <div class="contents lg:block lg:col-span-4 lg:space-y-4">
 
@@ -316,14 +368,44 @@ onMounted(() => {
 
       <div class="order-2 lg:order-none lg:col-span-8 bg-white rounded-3xl shadow-xl border border-gray-100 flex flex-col overflow-hidden h-[70vh] lg:h-[75vh]">
         
-        <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center shrink-0">
-          <h2 class="text-lg font-black text-gray-800 flex items-center gap-2"><span>🛒</span> Carrito de Compras</h2>
-          <span class="text-[10px] font-bold text-gray-500 bg-gray-200 px-2.5 py-1 rounded-full">{{ carrito.length }} Ítems</span>
+        <div class="px-4 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2 shrink-0">
+          <button
+            @click="pestana = 'grilla'"
+            :class="pestana === 'grilla' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200 hover:text-gray-800'"
+            class="flex-1 px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all"
+          >
+            👕 Prendas
+          </button>
+          <button
+            @click="pestana = 'carrito'"
+            :class="pestana === 'carrito' ? 'bg-gray-900 text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200 hover:text-gray-800'"
+            class="flex-1 px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+          >
+            🛒 Carrito
+            <span
+              v-if="carrito.length"
+              class="bg-blue-600 text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center"
+            >{{ carrito.length }}</span>
+          </button>
         </div>
-        
-        <div class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/20">
-          <div v-if="carrito.length === 0" class="h-full flex flex-col items-center justify-center text-gray-400">
+
+        <!-- 🎯 GRILLA TÁCTIL: toca la prenda, luego la celda de talla y color -->
+        <div v-show="pestana === 'grilla'" class="flex-1 min-h-0">
+          <GrillaPrendas
+            :inventario="inventarioConSKU"
+            :colores="colores"
+            :carrito="carrito"
+            :bodegaId="bodegaSeleccionada"
+            @agregar="agregarDesdeGrilla"
+          />
+        </div>
+
+        <div v-show="pestana === 'carrito'" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/20">
+          <div v-if="carrito.length === 0" class="h-full flex flex-col items-center justify-center text-gray-400 gap-3">
             <p class="font-bold text-gray-400">La boleta está vacía actualmente.</p>
+            <button @click="pestana = 'grilla'" class="bg-gray-900 text-white px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider hover:bg-gray-800">
+              👕 Ir a Prendas
+            </button>
           </div>
           
           <div v-else class="space-y-3">
@@ -334,6 +416,9 @@ onMounted(() => {
                   <span class="text-[12px] md:text-[10px] font-bold bg-blue-50 text-blue-700 px-2.5 py-1 md:py-0.5 rounded border border-blue-100">Talla {{ item.talla }}</span>
                   <span class="text-[12px] md:text-[10px] font-bold bg-purple-50 text-purple-700 px-2.5 py-1 md:py-0.5 rounded border border-purple-100">{{ nombreColor(item.color) }}</span>
                   <span class="text-[10px] md:text-[9px] font-mono text-gray-400 px-1 py-1 md:py-0.5">{{ item.sku }}</span>
+                  <span v-if="item.stockForzado" class="text-[11px] md:text-[10px] font-bold bg-amber-50 text-amber-700 px-2.5 py-1 md:py-0.5 rounded border border-amber-200" title="El sistema no registraba stock suficiente. Revisar inventario.">
+                    ⚠️ Revisar stock
+                  </span>
                 </div>
               </div>
               
