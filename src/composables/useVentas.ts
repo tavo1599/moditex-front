@@ -98,21 +98,103 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     return totalPagar.value - (Number(adelanto.value) || 0);
   });
 
-  // El stock del sistema y el físico se desfasan seguido. Bloquear la venta por eso
-  // hacía que el vendedor la apuntara en papel (y se perdiera). Preferimos registrar
-  // la venta real y marcar la variante para revisión de inventario.
-  const confirmarVentaSinStock = (referencia: string) =>
-    confirm(
-      `⚠️ El sistema marca 0 unidades de ${referencia} en esta bodega.\n\n` +
-      `Si la prenda la tienes físicamente, acepta: la venta se registra igual y la ` +
-      `variante queda marcada para revisar el inventario.\n\n¿Vender de todas formas?`
-    );
+  // 🔔 AVISOS NO BLOQUEANTES
+  // El stock del sistema y el físico se desfasan seguido. Antes esto salía como
+  // confirm(), que congela la caja hasta que alguien haga clic: en pleno mostrador
+  // eso interrumpe la venta. Ahora la venta NO se detiene nunca por stock; solo se
+  // deja un aviso a un costado para revisar el inventario después.
+  const avisos = ref<{ id: number; texto: string }[]>([]);
+  let siguienteAvisoId = 0;
 
-  const confirmarExcesoStock = (disponible: number) =>
-    confirm(
-      `⚠️ El sistema solo registra ${disponible} unidad(es) disponible(s).\n\n` +
-      `¿Agregar una más de todas formas? Quedará marcada para revisar el inventario.`
-    );
+  const avisar = (texto: string) => {
+    const id = ++siguienteAvisoId;
+    // Si el mismo aviso ya está en pantalla no lo repetimos (escanear 5 veces la
+    // misma prenda sin stock llenaría la pantalla de avisos idénticos).
+    if (avisos.value.some(a => a.texto === texto)) return;
+    avisos.value.push({ id, texto });
+    setTimeout(() => descartarAviso(id), 8000);
+  };
+
+  const descartarAviso = (id: number) => {
+    avisos.value = avisos.value.filter(a => a.id !== id);
+  };
+
+  // 💵 LISTAS DE PRECIO
+  // Cada prenda tiene precio minorista y mayorista. `tipoVenta` decide cuál se usa.
+  // Si la lista elegida está en cero (todavía no la configuraron) caemos a la otra
+  // antes que meter un 0 al carrito y vender regalado por descuido.
+  const precioDeLista = (linea: any): number => {
+    const mayorista = Number(linea?.precioMayorista) || 0;
+    const minorista = Number(linea?.precioMinorista) || 0;
+    const elegido = tipoVenta.value === 'MAYORISTA' ? mayorista : minorista;
+    return elegido || minorista || mayorista || 0;
+  };
+
+  /** Arma una línea de carrito nueva ya con las dos listas de precio a bordo. */
+  const nuevaLinea = (datos: {
+    sku: string; productoId: number; nombre: string; color: string;
+    talla: string; stockMaximo: number; producto?: any;
+  }) => {
+    const linea: any = {
+      sku: datos.sku,
+      productoId: datos.productoId,
+      nombre: datos.nombre,
+      color: datos.color,
+      talla: datos.talla,
+      cantidad: 1,
+      stockMaximo: datos.stockMaximo,
+      stockForzado: datos.stockMaximo <= 0,
+      // Se guardan en la línea para poder recalcular al cambiar de lista sin
+      // volver a consultar el inventario (y para que sobrevivan al borrador).
+      precioMinorista: Number(datos.producto?.precioMinorista) || 0,
+      precioMayorista: Number(datos.producto?.precioMayorista) || 0
+    };
+    linea.precioUnitario = precioDeLista(linea);
+
+    if (linea.stockForzado) {
+      avisar(`${datos.nombre} (${datos.talla}) quedó sin stock en el sistema. Revisar inventario.`);
+    }
+    if (linea.precioUnitario <= 0) {
+      avisar(`${datos.nombre} no tiene precio configurado. Escríbelo a mano en el carrito.`);
+    }
+    return linea;
+  };
+
+  // Al cambiar de lista se reaplican los precios a todo el carrito. Es una acción
+  // deliberada del vendedor, así que pisa también los precios editados a mano.
+  watch(tipoVenta, (lista) => {
+    if (carrito.value.length === 0) return;
+    carrito.value.forEach((linea) => { linea.precioUnitario = precioDeLista(linea); });
+    avisar(`Precios actualizados a la lista ${lista === 'MAYORISTA' ? 'MAYORISTA' : 'MINORISTA'}.`);
+    emitirSincronizacionCb(carrito.value);
+  });
+
+  /**
+   * Cambia la cantidad de una línea del carrito (input manual o botones +/−).
+   *
+   * Vender 5 polos iguales ya no obliga a escanear 5 veces: se escanea uno y se
+   * escribe la cantidad. Pasarse del stock del sistema no bloquea: se registra y
+   * queda avisado.
+   */
+  const cambiarCantidad = (item: any, valor: number | string) => {
+    let cantidad = Math.floor(Number(valor));
+    if (!isFinite(cantidad) || cantidad < 1) cantidad = 1;
+
+    const disponible = Number(item.stockMaximo) || 0;
+
+    item.cantidad = cantidad;
+    item.stockForzado = cantidad > disponible;
+
+    if (item.stockForzado) {
+      avisar(
+        disponible <= 0
+          ? `${item.nombre} (${item.talla}) quedó sin stock en el sistema. Revisar inventario.`
+          : `${item.nombre} (${item.talla}): vendes ${cantidad} y el sistema solo registra ${disponible}. Revisar inventario.`
+      );
+    }
+
+    emitirSincronizacionCb(carrito.value);
+  };
 
   // 🔥 CONVERTIMOS A ASYNC PARA PODER CONECTARSE CON EL BACKEND EN TIEMPO REAL
   const procesarEscaneo = async () => {
@@ -146,13 +228,8 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     });
 
     if (prendaLocal) {
-      // El sistema puede estar desfasado del físico. Antes esto BLOQUEABA la venta:
-      // el vendedor tenía la prenda en la mano y no podía cobrarla, así que la
-      // anotaba en papel y esa venta se perdía. Ahora se avisa y se deja decidir.
-      if (Number(prendaLocal.stock) <= 0 && !confirmarVentaSinStock(sku)) {
-        codigoEscaneado.value = '';
-        return;
-      }
+      // Si el sistema marca 0 igual se vende: el aviso lo emite cambiarCantidad más
+      // abajo, sin frenar al vendedor.
       productoId = Number(prendaLocal.productoId || prendaLocal.producto?.id);
       nombre = prendaLocal.producto?.nombre || 'Producto Genérico';
       color = prendaLocal.color;
@@ -182,34 +259,28 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     );
 
     if (itemEnCarrito) {
-      if (itemEnCarrito.cantidad + 1 > stockMaximo) {
-        if (!confirmarExcesoStock(stockMaximo)) {
-          codigoEscaneado.value = '';
-          return;
-        }
-        itemEnCarrito.stockForzado = true;
-      }
-      itemEnCarrito.cantidad++;
+      // Refrescamos el tope con el stock recién consultado antes de subir la cantidad
+      itemEnCarrito.stockMaximo = stockMaximo;
+      cambiarCantidad(itemEnCarrito, itemEnCarrito.cantidad + 1);
     } else {
-      // Buscamos el precio base configurado de forma local para no perder la reactividad
+      // Buscamos el producto local para leer sus dos listas de precio
       const referenciaPrenda = inventarioConSKURef.value.find(
         (i: any) => Number(i.productoId || i.producto?.id) === productoId
       );
-      const precioVentaBase = referenciaPrenda?.producto?.precioVenta || 0;
 
-      carrito.value.unshift({
-        sku: sku, // Guardamos el código exacto que disparó el láser
-        productoId: productoId,
-        nombre: nombre,
-        color: color,
-        talla: talla,
-        cantidad: 1,
-        stockMaximo: stockMaximo,
-        stockForzado: stockMaximo <= 0,
-        precioUnitario: precioVentaBase
-      });
+      carrito.value.unshift(
+        nuevaLinea({
+          sku, // Guardamos el código exacto que disparó el láser
+          productoId,
+          nombre,
+          color,
+          talla,
+          stockMaximo,
+          producto: referenciaPrenda?.producto
+        })
+      );
     }
-    
+
     codigoEscaneado.value = '';
     
     // Alerta auditiva de confirmación
@@ -226,7 +297,6 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
   const agregarPrendaManual = (prenda: any) => {
     if (!bodegaSeleccionada.value) return alert('Selecciona una bodega primero.');
     if (!prenda) return;
-    if (Number(prenda.stock) <= 0 && !confirmarVentaSinStock(prenda.producto?.nombre || 'esta prenda')) return;
 
     const productoId = Number(prenda.productoId || prenda.producto?.id);
     const nombre = prenda.producto?.nombre || 'Producto';
@@ -239,23 +309,20 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     );
 
     if (itemEnCarrito) {
-      if (itemEnCarrito.cantidad + 1 > stockMaximo) {
-        if (!confirmarExcesoStock(stockMaximo)) return;
-        itemEnCarrito.stockForzado = true;
-      }
-      itemEnCarrito.cantidad++;
+      itemEnCarrito.stockMaximo = stockMaximo;
+      cambiarCantidad(itemEnCarrito, itemEnCarrito.cantidad + 1);
     } else {
-      carrito.value.unshift({
-        sku: prenda.skuCalculado || `PRD${productoId}-${color}-${talla}`,
-        productoId,
-        nombre,
-        color,
-        talla,
-        cantidad: 1,
-        stockMaximo,
-        stockForzado: stockMaximo <= 0,
-        precioUnitario: prenda.producto?.precioVenta || 0,
-      });
+      carrito.value.unshift(
+        nuevaLinea({
+          sku: prenda.skuCalculado || `PRD${productoId}-${color}-${talla}`,
+          productoId,
+          nombre,
+          color,
+          talla,
+          stockMaximo,
+          producto: prenda.producto
+        })
+      );
     }
 
     emitirSincronizacionCb(carrito.value);
@@ -272,6 +339,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     condicionPago, clienteId, adelanto, numeroCuotas, frecuenciaPago,
     clienteNombre, tipoVenta, metodoEntrega, destinoEnvio, modalTicket, ventaRealizada,
     totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual,
-    borradorRecuperado, limpiarBorrador
+    cambiarCantidad, borradorRecuperado, limpiarBorrador,
+    avisos, descartarAviso
   };
 }

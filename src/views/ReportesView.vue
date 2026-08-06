@@ -186,7 +186,7 @@
             <div><p class="text-[10px] font-black text-gray-400 uppercase">Vendedor</p><p class="font-bold text-gray-800 text-sm">{{ detalle.vendedor || '—' }}</p></div>
             <div><p class="text-[10px] font-black text-gray-400 uppercase">Almacén</p><p class="font-bold text-gray-800 text-sm">{{ detalle.almacen }}</p></div>
             <div><p class="text-[10px] font-black text-gray-400 uppercase">Cliente</p><p class="font-bold text-gray-800 text-sm">{{ detalle.cliente }}</p></div>
-            <div><p class="text-[10px] font-black text-gray-400 uppercase">Comprobante</p><p class="font-bold text-gray-800 text-sm">{{ detalle.tipoVenta }}</p></div>
+            <div><p class="text-[10px] font-black text-gray-400 uppercase">Lista de precios</p><p class="font-bold text-gray-800 text-sm">{{ detalle.tipoVenta }}</p></div>
             <div><p class="text-[10px] font-black text-gray-400 uppercase">Condición</p><p class="font-bold text-gray-800 text-sm">{{ detalle.condicionPago }}</p></div>
             <div><p class="text-[10px] font-black text-gray-400 uppercase">Entrega</p><p class="font-bold text-gray-800 text-sm">{{ detalle.metodoEntrega }}</p></div>
             <div v-if="detalle.destinoEnvio"><p class="text-[10px] font-black text-gray-400 uppercase">Destino</p><p class="font-bold text-gray-800 text-sm">{{ detalle.destinoEnvio }}</p></div>

@@ -57,6 +57,12 @@ const router = createRouter({
       meta: SOLO_ADMIN
     },
     {
+      path: '/precios',
+      name: 'precios',
+      component: () => import('../views/PreciosView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
       path: '/control-ordenes',
       name: 'control-ordenes',
       component: () => import('../views/ControlOrdenesView.vue'),

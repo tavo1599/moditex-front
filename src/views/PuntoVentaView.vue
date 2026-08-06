@@ -60,7 +60,7 @@ const {
   condicionPago, clienteId, adelanto, numeroCuotas, frecuenciaPago,
   clienteNombre, tipoVenta, metodoEntrega, destinoEnvio, modalTicket, ventaRealizada,
   totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual,
-  borradorRecuperado, limpiarBorrador
+  cambiarCantidad, borradorRecuperado, limpiarBorrador, avisos, descartarAviso
 } = useVentas(inventarioConSKU, (carritoActual) => emitirSincronizacion(carritoActual));
 
 const { enviarVenta } = useColaVentas();
@@ -96,6 +96,16 @@ const pestana = ref<'grilla' | 'carrito'>('grilla');
 // Al agregar desde la grilla, en móvil el carrito no se ve; un contador en la
 // pestaña da el feedback sin sacar al vendedor de la grilla.
 const agregarDesdeGrilla = (prenda: any) => agregarPrendaManual(prenda);
+
+// Escribir la cantidad a mano: si el valor tecleado se corrige (vacío, decimales,
+// menos de 1, o un exceso de stock que el vendedor no confirmó), hay que repintar
+// el input. Vue no lo hace solo cuando la cantidad final termina siendo la misma
+// que ya tenía, y el campo se quedaría en blanco.
+const editarCantidad = (item: any, evento: Event) => {
+  const input = evento.target as HTMLInputElement;
+  cambiarCantidad(item, input.value);
+  input.value = String(item.cantidad);
+};
 
 const { pinConexion, movilVinculado, mostrarVinculacion, urlVinculacion, emitirSincronizacion } = useScanner(
   () => procesarEscaneo(),
@@ -396,6 +406,7 @@ onMounted(() => {
             :colores="colores"
             :carrito="carrito"
             :bodegaId="bodegaSeleccionada"
+            :listaPrecio="tipoVenta"
             @agregar="agregarDesdeGrilla"
           />
         </div>
@@ -429,7 +440,30 @@ onMounted(() => {
                 </div>
                 <div class="flex flex-col items-center">
                   <span class="text-[8px] text-gray-400 font-black uppercase mb-1">Cant.</span>
-                  <div class="bg-white border border-gray-300 px-3 py-1.5 rounded-lg font-black text-sm text-blue-600 text-center">{{ item.cantidad }}</div>
+                  <div class="flex items-center gap-1">
+                    <button
+                      @click="cambiarCantidad(item, item.cantidad - 1)"
+                      :disabled="item.cantidad <= 1"
+                      class="w-7 h-7 rounded-lg bg-white border border-gray-300 text-gray-600 font-black text-base leading-none flex items-center justify-center hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed active:scale-90 transition-all"
+                      title="Quitar una unidad"
+                    >−</button>
+
+                    <input
+                      type="number"
+                      min="1"
+                      :value="item.cantidad"
+                      @change="editarCantidad(item, $event)"
+                      @focus="($event.target as HTMLInputElement).select()"
+                      class="w-14 bg-white border border-gray-300 py-1.5 text-center rounded-lg font-black text-sm text-blue-600 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      title="Escribe la cantidad y presiona Enter"
+                    />
+
+                    <button
+                      @click="cambiarCantidad(item, item.cantidad + 1)"
+                      class="w-7 h-7 rounded-lg bg-white border border-gray-300 text-gray-600 font-black text-base leading-none flex items-center justify-center hover:bg-gray-100 active:scale-90 transition-all"
+                      title="Agregar una unidad"
+                    >+</button>
+                  </div>
                 </div>
                 <button @click="quitarDelCarrito(index)" class="text-gray-300 hover:text-red-500 bg-white hover:bg-red-50 border border-transparent hover:border-red-200 p-2 rounded-lg transition-all">✕</button>
               </div>
@@ -444,12 +478,26 @@ onMounted(() => {
               <label class="block text-[9px] font-black text-gray-400 uppercase tracking-wider mb-1">Cliente / Razón Social</label>
               <input v-model="clienteNombre" type="text" placeholder="Público General" class="w-full bg-gray-50 border border-gray-200 text-gray-800 font-bold p-2.5 rounded-xl text-xs outline-none focus:bg-white" />
             </div>
+            <!-- 💵 Cambia la lista de precios de todo el carrito. La boleta que se
+                 entrega es la misma en ambos casos: no emitimos facturas. -->
             <div>
-              <label class="block text-[9px] font-black text-gray-400 uppercase tracking-wider mb-1">Comprobante</label>
-              <select v-model="tipoVenta" class="w-full bg-gray-50 border border-gray-200 text-gray-800 font-bold p-2.5 rounded-xl text-xs outline-none focus:bg-white">
-                <option value="MINORISTA">Venta Minorista (Boleta/Nota)</option>
-                <option value="MAYORISTA">Venta Mayorista (Factura)</option>
-              </select>
+              <label class="block text-[9px] font-black text-gray-400 uppercase tracking-wider mb-1">Lista de Precios</label>
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  @click="tipoVenta = 'MINORISTA'"
+                  :class="tipoVenta === 'MINORISTA' ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-blue-300'"
+                  class="border p-2.5 rounded-xl font-black text-[11px] uppercase tracking-wider transition-all"
+                >
+                  Minorista
+                </button>
+                <button
+                  @click="tipoVenta = 'MAYORISTA'"
+                  :class="tipoVenta === 'MAYORISTA' ? 'bg-purple-600 text-white border-purple-600' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-purple-300'"
+                  class="border p-2.5 rounded-xl font-black text-[11px] uppercase tracking-wider transition-all"
+                >
+                  Mayorista
+                </button>
+              </div>
             </div>
           </div>
 
@@ -494,8 +542,27 @@ onMounted(() => {
     </div>
   </div>
 
-  <ModalNuevoCliente 
-    :show="modalNuevoCliente" 
+  <!-- 🔔 AVISOS FLOTANTES
+       Reemplazan a los confirm() de stock: informan sin frenar la venta.
+       Se van solos a los 8 segundos y no bloquean ningún clic de la caja. -->
+  <div class="fixed bottom-4 right-4 z-[90] flex flex-col gap-2 max-w-[360px] pointer-events-none">
+    <div
+      v-for="a in avisos"
+      :key="a.id"
+      class="bg-amber-50 border-2 border-amber-300 rounded-2xl shadow-lg px-4 py-3 flex items-start gap-3 pointer-events-auto animate-[fadeIn_0.2s_ease-out]"
+    >
+      <span class="text-lg leading-none shrink-0">⚠️</span>
+      <p class="text-xs font-bold text-amber-900 flex-1 leading-snug">{{ a.texto }}</p>
+      <button
+        @click="descartarAviso(a.id)"
+        class="text-amber-400 hover:text-amber-700 font-black text-sm leading-none shrink-0"
+        title="Cerrar aviso"
+      >✕</button>
+    </div>
+  </div>
+
+  <ModalNuevoCliente
+    :show="modalNuevoCliente"
     @close="modalNuevoCliente = false"
     @cliente-registrado="alRegistrarCliente"
   />

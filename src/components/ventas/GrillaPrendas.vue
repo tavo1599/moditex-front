@@ -19,7 +19,16 @@ const props = defineProps<{
   colores: any[];
   carrito: any[];
   bodegaId: number | '';
+  listaPrecio: string;    // 'MINORISTA' | 'MAYORISTA'
 }>();
+
+/** Precio que vería el vendedor con la lista activa (cae a la otra si está en cero). */
+const precioVisible = (producto: any): number => {
+  const mayorista = Number(producto?.precioMayorista) || 0;
+  const minorista = Number(producto?.precioMinorista) || 0;
+  const elegido = props.listaPrecio === 'MAYORISTA' ? mayorista : minorista;
+  return elegido || minorista || mayorista || 0;
+};
 
 const emit = defineEmits<{ (e: 'agregar', prenda: any): void }>();
 
@@ -53,7 +62,7 @@ const prendas = computed(() => {
         clave,
         nombre: item.producto?.nombre || 'Producto',
         skuBase: item.producto?.skuBase || '',
-        precio: Number(item.producto?.precioVenta) || 0,
+        precio: precioVisible(item.producto),
         total: 0
       });
     }
@@ -155,7 +164,11 @@ const volver = () => { prendaActiva.value = ''; };
           >
             <p class="font-black text-gray-800 text-sm leading-tight line-clamp-2">{{ p.nombre }}</p>
             <div class="flex items-end justify-between gap-2 mt-3">
-              <span class="text-[9px] font-mono text-gray-400 truncate">{{ p.skuBase }}</span>
+              <span
+                class="text-[11px] font-black shrink-0"
+                :class="p.precio > 0 ? 'text-gray-700' : 'text-amber-600'"
+                :title="p.precio > 0 ? `Precio ${listaPrecio.toLowerCase()}` : 'Sin precio configurado en la lista de precios'"
+              >{{ p.precio > 0 ? `S/ ${p.precio.toFixed(2)}` : 'S/ —' }}</span>
               <span
                 class="text-[11px] font-black px-2 py-0.5 rounded shrink-0"
                 :class="p.total > 0 ? 'text-emerald-700 bg-emerald-50' : 'text-gray-400 bg-gray-100'"
