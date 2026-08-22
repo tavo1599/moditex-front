@@ -1,5 +1,6 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import api from '../api/axios';
+import { coincideSku, normalizarCodigo } from '../utils/sku';
 
 // Recordamos la última bodega elegida para no tener que seleccionarla cada vez
 // que se cambia de vista (se guarda en el navegador y se puede cambiar normal).
@@ -204,7 +205,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
       return;
     }
 
-    const sku = codigoEscaneado.value.trim().toUpperCase().replace(/'/g, '-');
+    const sku = normalizarCodigo(codigoEscaneado.value);
     if (!sku) return;
 
     // Variables de molde para capturar la prenda venga de donde venga
@@ -215,17 +216,11 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     let stockMaximo = 0;
 
     // 🔄 PLAN A (local): las etiquetas del sistema se resuelven directo con el
-    // inventario. Reconocemos AMBOS formatos del código de barras:
-    //   • completo  → 'PRD4-MLC-S'  (etiquetas viejas)
-    //   • compacto  → '4MLCS'       (etiquetas nuevas, la mitad de barras)
-    // Comparamos contra el skuCalculado tal cual y también sin 'PRD' ni guiones.
+    // inventario. coincideSku reconoce el formato completo y el compacto.
     const bodega = Number(bodegaSeleccionada.value);
-    const prendaLocal = inventarioConSKURef.value.find((i: any) => {
-      if (Number(i.bodegaId) !== bodega) return false;
-      const full = String(i.skuCalculado || '').toUpperCase();
-      const compacto = full.replace(/^PRD/, '').replace(/-/g, '');
-      return full === sku || compacto === sku;
-    });
+    const prendaLocal = inventarioConSKURef.value.find(
+      (i: any) => Number(i.bodegaId) === bodega && coincideSku(sku, i.skuCalculado)
+    );
 
     if (prendaLocal) {
       // Si el sistema marca 0 igual se vende: el aviso lo emite cambiarCantidad más

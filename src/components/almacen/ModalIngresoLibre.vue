@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue';
 import api from '../../api/axios'; // Ajusta la ruta si es necesario
+import { parsearCodigoPrenda } from '../../utils/sku';
 
 const props = defineProps<{
   bodegas: any[];
@@ -93,12 +94,13 @@ const manejarCodigo = async (raw: string) => {
 
   if (!formIngreso.value.bodegaId) { scanError.value = 'Selecciona primero la bodega.'; return; }
 
-  const m = code.match(/^PRD(\d+)-(.+)-([^-]+)$/);
-  if (!m) { scanError.value = `Código no reconocido: ${code}`; scanOk.value = ''; return; }
+  // Reconoce las etiquetas viejas (PRD4-MLC-S) y las nuevas compactas (4MLCS)
+  const leido = parsearCodigoPrenda(code, props.colores);
+  if (!leido) { scanError.value = `Código no reconocido: ${code}`; scanOk.value = ''; return; }
 
-  const idProd = Number(m[1]);
-  const colorTok = m[2] || '';
-  const tallaTok = m[3] || '';
+  const idProd = leido.productoId;
+  const colorTok = leido.color;
+  const tallaTok = leido.talla;
 
   const prod = props.productos.find((p) => Number(p.id) === idProd);
   if (!prod) { scanError.value = `Producto ${idProd} no existe en el sistema.`; scanOk.value = ''; return; }

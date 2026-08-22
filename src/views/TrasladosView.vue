@@ -5,7 +5,8 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import QrcodeVue from 'qrcode.vue'; 
 import QRCode from 'qrcode'; 
-import { useScanner } from '../composables/useScanner'; 
+import { useScanner } from '../composables/useScanner';
+import { coincideSku, parsearCodigoPrenda } from '../utils/sku';
 
 // --- DEFINICIÓN DE TIPOS ---
 type MatrizPlana = Record<string, number>;
@@ -176,21 +177,23 @@ const procesarCodigo = (codigoEscaneado: string) => {
   const codigoLimpio = norm(codigoEscaneado).replace(/'/g, '-');
   const enOrigen = inventarioConSKU.value.filter((inv: any) => inv.bodegaId === Number(form.value.origenId));
 
-  // 1) Coincidencia exacta por SKU calculado / código de barras / SKU base (normalizados)
+  // 1) Coincidencia exacta por SKU calculado / código de barras / SKU base.
+  //    coincideSku acepta tanto la etiqueta vieja (PRD4-MLC-S) como la nueva
+  //    compacta (4MLCS), que antes no se reconocía aquí.
   let itemEncontrado = enOrigen.find((inv: any) =>
-    norm(inv.skuCalculado) === codigoLimpio ||
-    norm(inv.skuBarras) === codigoLimpio ||
-    norm(inv.producto?.skuBase) === codigoLimpio,
+    coincideSku(codigoLimpio, inv.skuCalculado) ||
+    coincideSku(codigoLimpio, inv.skuBarras) ||
+    coincideSku(codigoLimpio, inv.producto?.skuBase),
   );
 
-  // 2) Fallback estructural PRD<id>-<color>-<talla>: tolera que el color esté guardado
-  //    como código, nombre o solo sus 3 primeras letras (origen real del bug en negros, etc.)
+  // 2) Fallback estructural: tolera que el color esté guardado como código, nombre
+  //    o solo sus 3 primeras letras (origen real del bug en negros, etc.)
   if (!itemEncontrado) {
-    const m = codigoLimpio.match(/^PRD(\d+)-(.+)-([^-]+)$/);
-    if (m) {
-      const idProd = Number(m[1]);
-      const colorTok = m[2];
-      const tallaTok = m[3];
+    const leido = parsearCodigoPrenda(codigoLimpio, colores.value);
+    if (leido) {
+      const idProd = leido.productoId;
+      const colorTok = leido.color;
+      const tallaTok = leido.talla;
       itemEncontrado = enOrigen.find((inv: any) => {
         if (Number(inv.productoId ?? inv.producto?.id) !== idProd) return false;
         if (norm(inv.talla) !== tallaTok) return false;
