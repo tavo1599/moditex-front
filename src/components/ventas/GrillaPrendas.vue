@@ -6,17 +6,22 @@ import { ordenarTallas } from '../../utils/tallas';
  * 🎯 GRILLA TÁCTIL DE VENTA
  *
  * Reemplaza la dependencia de la pistola láser: cuando la etiqueta no lee (o ya
- * ni existe), el vendedor toca la prenda y después toca la celda de talla+color.
- * Dos toques, sin escribir nada, y el stock por variante sigue quedando exacto.
+ * ni existe), el vendedor toca la prenda y después toca la talla. Dos toques,
+ * sin escribir nada.
  *
- * Las celdas en cero también se pueden tocar a propósito: el sistema y el físico
+ * 🎨 SIN COLOR: elegir el color en el mostrador era lo que frenaba la venta, así
+ * que la grilla muestra el stock de cada talla SUMANDO todos sus colores. De qué
+ * color sale cada unidad lo reparte el sistema al cobrar (`construirDetalles` en
+ * useVentas), empezando por el color con más stock. El almacén sigue viendo el
+ * detalle por color; lo estimado se corrige con el conteo físico.
+ *
+ * Las tallas en cero también se pueden tocar a propósito: el sistema y el físico
  * se desfasan, y bloquear ahí era justo lo que hacía que la venta se apuntara en
- * papel. Al tocarla salta la confirmación de "vender igual" del composable.
+ * papel. Al tocarla queda avisada para revisar inventario, sin frenar la venta.
  */
 
 const props = defineProps<{
   inventario: any[];      // inventario con skuCalculado ya resuelto
-  colores: any[];
   carrito: any[];
   bodegaId: number | '';
   listaPrecio: string;    // 'MINORISTA' | 'MAYORISTA'
@@ -37,13 +42,6 @@ const busqueda = ref('');
 
 const claveProducto = (item: any) =>
   String(item?.productoId ?? item?.producto?.id ?? item?.producto?.skuBase ?? item?.producto?.nombre ?? '—');
-
-const getColorObj = (cod: string) => props.colores.find(c => c.codigo === cod || c.nombre === cod);
-const nombreColor = (cod: string) => getColorObj(cod)?.nombre || cod || '—';
-const hexColor = (cod: string) => {
-  const c = getColorObj(cod);
-  return c?.hex || c?.codigoHex || '#e5e7eb';
-};
 
 /** Solo el inventario de la bodega donde está parada la caja. */
 const inventarioBodega = computed(() =>
@@ -86,46 +84,48 @@ const prendaSeleccionada = computed(() => {
   };
 });
 
-/** Cuántas unidades de esta variante ya están en el carrito (feedback inmediato del toque). */
+/** Cuántas unidades de esta talla ya están en el carrito (feedback inmediato del toque). */
 const enCarrito = (item: any) => {
   const linea = props.carrito.find(
-    c => Number(c.productoId) === Number(item.productoId ?? item.producto?.id)
-      && c.color === item.color
-      && c.talla === item.talla
+    c => Number(c.productoId) === Number(item.productoId)
+      && String(c.talla) === String(item.talla)
   );
   return linea ? Number(linea.cantidad) : 0;
 };
 
-/** Matriz color (filas) × talla (columnas) de la prenda abierta. */
-const matriz = computed(() => {
-  if (!prendaActiva.value) return { tallas: [], filas: [] as any[] };
+/**
+ * Tallas de la prenda abierta, con el stock sumado de TODOS sus colores.
+ * `coloresDistintos` es solo informativo (va en el tooltip): sirve para que el
+ * vendedor sepa que esa talla viene en varios colores, no para elegir uno.
+ */
+const tallasPrenda = computed(() => {
+  if (!prendaActiva.value) return [] as any[];
 
   const variantes = inventarioBodega.value.filter(i => claveProducto(i) === prendaActiva.value);
-  const tallas = ordenarTallas(Array.from(new Set(variantes.map(v => String(v.talla ?? '—')))));
 
-  const porColor = new Map<string, Record<string, any>>();
+  const porTalla = new Map<string, any>();
   variantes.forEach(v => {
-    const color = String(v.color ?? '—');
-    if (!porColor.has(color)) porColor.set(color, {});
-    porColor.get(color)![String(v.talla ?? '—')] = v;
+    const talla = String(v.talla ?? '—');
+    if (!porTalla.has(talla)) {
+      porTalla.set(talla, {
+        talla,
+        stock: 0,
+        coloresDistintos: 0,
+        productoId: Number(v.productoId ?? v.producto?.id),
+        producto: v.producto
+      });
+    }
+    const fila = porTalla.get(talla);
+    fila.stock += Number(v.stock) || 0;
+    if (Number(v.stock) > 0) fila.coloresDistintos += 1;
   });
 
-  const filas = Array.from(porColor.entries())
-    .map(([color, celdas]) => ({
-      color,
-      nombre: nombreColor(color),
-      hex: hexColor(color),
-      celdas,
-      total: Object.values(celdas).reduce((s: number, v: any) => s + (Number(v.stock) || 0), 0)
-    }))
-    .sort((a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre));
-
-  return { tallas, filas };
+  return ordenarTallas(Array.from(porTalla.keys())).map(t => porTalla.get(t));
 });
 
-const tocarCelda = (variante: any) => {
-  if (!variante) return;
-  emit('agregar', variante);
+const tocarTalla = (talla: any) => {
+  if (!talla) return;
+  emit('agregar', talla);
 };
 
 const volver = () => { prendaActiva.value = ''; };
@@ -179,7 +179,7 @@ const volver = () => { prendaActiva.value = ''; };
       </div>
     </template>
 
-    <!-- PASO 2: tocar la celda talla × color -->
+    <!-- PASO 2: tocar la talla -->
     <template v-else>
       <div class="p-4 border-b border-gray-100 flex items-center gap-3 shrink-0">
         <button
@@ -190,61 +190,40 @@ const volver = () => { prendaActiva.value = ''; };
         </button>
         <div class="min-w-0">
           <p class="font-black text-gray-800 text-sm truncate">{{ prendaSeleccionada?.nombre }}</p>
-          <p class="text-[10px] font-bold text-gray-400">Toca una celda para agregar 1 unidad</p>
+          <p class="text-[10px] font-bold text-gray-400">Toca una talla para agregar 1 unidad</p>
         </div>
       </div>
 
-      <div class="flex-1 overflow-auto p-4">
-        <table class="w-full border-separate border-spacing-1">
-          <thead>
-            <tr>
-              <th class="sticky left-0 bg-white z-10 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest px-2 min-w-[110px]">Color</th>
-              <th
-                v-for="t in matriz.tallas"
-                :key="t"
-                class="text-center text-[11px] font-black text-gray-600 bg-gray-100 rounded-lg py-2 min-w-[62px]"
-              >{{ t }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="f in matriz.filas" :key="f.color">
-              <td class="sticky left-0 bg-white z-10 pr-2">
-                <div class="flex items-center gap-1.5 min-w-0">
-                  <span class="w-3 h-3 rounded-full border border-gray-300 shrink-0" :style="{ backgroundColor: f.hex }"></span>
-                  <span class="font-bold text-gray-700 text-xs truncate">{{ f.nombre }}</span>
-                </div>
-              </td>
+      <div class="flex-1 overflow-y-auto p-4">
+        <div v-if="tallasPrenda.length === 0" class="h-full flex items-center justify-center">
+          <p class="font-bold text-gray-400 text-sm text-center">Esta prenda no tiene tallas en esta bodega.</p>
+        </div>
 
-              <td v-for="t in matriz.tallas" :key="t" class="p-0">
-                <button
-                  v-if="f.celdas[t]"
-                  @click="tocarCelda(f.celdas[t])"
-                  class="w-full h-14 rounded-lg font-black transition-all active:scale-90 relative border-2 flex flex-col items-center justify-center leading-none"
-                  :class="Number(f.celdas[t].stock) > 0
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-400'
-                    : 'bg-gray-50 border-dashed border-gray-200 text-gray-300 hover:border-amber-400 hover:text-amber-600'"
-                  :title="Number(f.celdas[t].stock) > 0
-                    ? `${f.nombre} · Talla ${t} · ${f.celdas[t].stock} disponibles`
-                    : `${f.nombre} · Talla ${t} · sin stock en el sistema`"
-                >
-                  <span class="text-base">{{ f.celdas[t].stock }}</span>
-                  <span class="text-[8px] font-bold uppercase tracking-wider opacity-60">und</span>
+        <div v-else class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-3">
+          <button
+            v-for="t in tallasPrenda"
+            :key="t.talla"
+            @click="tocarTalla(t)"
+            class="h-24 rounded-2xl font-black transition-all active:scale-95 relative border-2 flex flex-col items-center justify-center gap-1 leading-none"
+            :class="t.stock > 0
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-400'
+              : 'bg-gray-50 border-dashed border-gray-200 text-gray-400 hover:border-amber-400 hover:text-amber-600'"
+            :title="t.stock > 0
+              ? `Talla ${t.talla} · ${t.stock} disponibles en ${t.coloresDistintos} color(es)`
+              : `Talla ${t.talla} · sin stock en el sistema`"
+          >
+            <span class="text-2xl">{{ t.talla }}</span>
+            <span class="text-xs font-black opacity-80">{{ t.stock }} und</span>
 
-                  <span
-                    v-if="enCarrito(f.celdas[t]) > 0"
-                    class="absolute -top-1.5 -right-1.5 bg-blue-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md"
-                  >{{ enCarrito(f.celdas[t]) }}</span>
-                </button>
-
-                <!-- Esa combinación de talla y color no existe para esta prenda -->
-                <div v-else class="w-full h-14 rounded-lg bg-gray-50/60 border border-gray-100"></div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+            <span
+              v-if="enCarrito(t) > 0"
+              class="absolute -top-2 -right-2 bg-blue-600 text-white text-[11px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-md"
+            >{{ enCarrito(t) }}</span>
+          </button>
+        </div>
 
         <p class="text-[10px] font-bold text-gray-400 mt-4 px-1">
-          Las celdas punteadas están en cero según el sistema. Si tienes la prenda físicamente puedes tocarlas igual: se pedirá confirmación y quedará marcada para revisar inventario.
+          El stock mostrado suma todos los colores de la talla. El color se asigna solo al cobrar, empezando por el que más stock tiene. Las tallas punteadas están en cero según el sistema: si tienes la prenda físicamente puedes tocarlas igual y quedará marcada para revisar inventario.
         </p>
       </div>
     </template>

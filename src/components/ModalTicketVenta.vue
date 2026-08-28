@@ -49,7 +49,7 @@ const construirTicketHTML = (f: { px: number; font: number; page: string }): str
       ${props.carrito.map(item => `
         <div class="f" style="margin-bottom:4px;">
           <span class="q">${item.cantidad}</span>
-          <span class="n">${item.nombre}<br><small>T:${item.talla} | C:${item.color}</small></span>
+          <span class="n">${item.nombre}<br><small>T:${item.talla}</small></span>
           <span>${(item.cantidad * item.precioUnitario).toFixed(2)}</span>
         </div>`).join('')}
       <div class="d"></div>
@@ -119,7 +119,7 @@ const descargarPDF = () => {
   filas.push({ kind: 'lr', lines: ['CT DESCRIPCION'], right: 'TOTAL', bold: true, size: f.pdfFont, h: lh });
   filas.push({ kind: 'div', h: 3 });
   for (const item of props.carrito) {
-    const izq = envolver(`${item.cantidad} ${item.nombre} (T:${item.talla} C:${item.color})`, usableChars - 8);
+    const izq = envolver(`${item.cantidad} ${item.nombre} (T:${item.talla})`, usableChars - 8);
     filas.push({ kind: 'item', lines: izq, right: `S/ ${(item.cantidad * item.precioUnitario).toFixed(2)}`, size: f.pdfFont, h: lh * izq.length });
   }
   filas.push({ kind: 'div', h: 3 });

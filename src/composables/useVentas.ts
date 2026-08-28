@@ -131,16 +131,50 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     return elegido || minorista || mayorista || 0;
   };
 
+  /* ──────────────────────────────────────────────────────────────
+     🎨 LA CAJA VENDE POR TALLA, NO POR COLOR
+
+     Elegir el color en el mostrador era lo que frenaba la venta. Ahora la línea
+     del carrito es prenda + talla, con el stock sumado de todos sus colores, y
+     el reparto por color se resuelve solo al cobrar (ver `construirDetalles`).
+
+     El almacén NO pierde el color: sigue descontándose de una variante real. Lo
+     único estimado es de cuál de los colores sale cada unidad, y eso se corrige
+     con el conteo físico de inventario.
+     ────────────────────────────────────────────────────────────── */
+
+  /** Identidad de una línea de carrito: la caja ya no separa por color. */
+  const claveLinea = (productoId: any, talla: any) => `${Number(productoId)}-${String(talla)}`;
+
+  /** La clave de una línea, tolerando borradores viejos que no la traían. */
+  const claveDe = (linea: any) => linea.clave || claveLinea(linea.productoId, linea.talla);
+
+  /** Todas las variantes de color de esa prenda+talla en la bodega de la caja. */
+  const variantesDeTalla = (productoId: any, talla: any): any[] =>
+    inventarioConSKURef.value.filter(
+      (i: any) =>
+        Number(i.bodegaId) === Number(bodegaSeleccionada.value) &&
+        Number(i.productoId || i.producto?.id) === Number(productoId) &&
+        String(i.talla) === String(talla)
+    );
+
+  /** Stock de la talla sumando todos sus colores: es el tope que ve el vendedor. */
+  const stockDeTalla = (productoId: any, talla: any): number =>
+    variantesDeTalla(productoId, talla).reduce((s, v) => s + (Number(v.stock) || 0), 0);
+
   /** Arma una línea de carrito nueva ya con las dos listas de precio a bordo. */
   const nuevaLinea = (datos: {
-    sku: string; productoId: number; nombre: string; color: string;
+    sku: string; productoId: number; nombre: string; colorPreferido?: string;
     talla: string; stockMaximo: number; producto?: any;
   }) => {
     const linea: any = {
+      clave: claveLinea(datos.productoId, datos.talla),
       sku: datos.sku,
       productoId: datos.productoId,
       nombre: datos.nombre,
-      color: datos.color,
+      // Solo se llena cuando la línea nació de un escaneo: ese color es dato
+      // exacto (viene en la etiqueta) y se respeta antes que estimar.
+      colorPreferido: datos.colorPreferido || '',
       talla: datos.talla,
       cantidad: 1,
       stockMaximo: datos.stockMaximo,
@@ -159,6 +193,74 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
       avisar(`${datos.nombre} no tiene precio configurado. Escríbelo a mano en el carrito.`);
     }
     return linea;
+  };
+
+  /**
+   * 🎨 REPARTO DE COLOR AL COBRAR
+   *
+   * La caja vende por talla, pero el almacén descuenta por color: alguien tiene
+   * que decidir de qué color sale cada unidad. Lo decide el sistema, empezando
+   * por el color con MÁS stock, así ningún color queda en negativo. Si vendes 5
+   * de talla M y hay Negro 3 / Rojo 4, salen 4 Rojo + 1 Negro.
+   *
+   * El color escaneado manda sobre la estimación: la etiqueta trae el color real.
+   */
+  const construirDetalles = () => {
+    const detalles: any[] = [];
+
+    carrito.value.forEach((linea: any) => {
+      let porRepartir = Number(linea.cantidad) || 0;
+      if (porRepartir <= 0) return;
+
+      // Suma sobre la fila que ya exista para esa variante en vez de repetirla:
+      // al vender más de lo que registra el sistema, el sobrante cae sobre un
+      // color que ya se había servido y el backend recibiría la misma variante
+      // dos veces.
+      const agregar = (color: string, cantidad: number) => {
+        const yaEsta = detalles.find(
+          (d) => d.productoId === Number(linea.productoId) &&
+                 d.color === String(color) &&
+                 d.talla === String(linea.talla)
+        );
+        if (yaEsta) {
+          yaEsta.cantidad += Number(cantidad);
+          return;
+        }
+        detalles.push({
+          productoId: Number(linea.productoId),
+          color: String(color),
+          talla: String(linea.talla),
+          cantidad: Number(cantidad),
+          precioUnitario: Number(linea.precioUnitario)
+        });
+      };
+
+      const variantes = variantesDeTalla(linea.productoId, linea.talla)
+        .map((v: any) => ({ color: String(v.color), stock: Number(v.stock) || 0 }))
+        .sort((a, b) => {
+          if (linea.colorPreferido) {
+            if (a.color === linea.colorPreferido) return -1;
+            if (b.color === linea.colorPreferido) return 1;
+          }
+          return b.stock - a.stock;
+        });
+
+      variantes.forEach((v) => {
+        if (porRepartir <= 0 || v.stock <= 0) return;
+        const toma = Math.min(v.stock, porRepartir);
+        agregar(v.color, toma);
+        porRepartir -= toma;
+      });
+
+      // Se vendió más de lo que el sistema registra (pasa seguido: el físico va
+      // adelante del sistema). El sobrante se carga al color escaneado, o al que
+      // más stock tenía, y el aviso de "revisar inventario" ya salió al agregarlo.
+      if (porRepartir > 0) {
+        agregar(linea.colorPreferido || variantes[0]?.color || '', porRepartir);
+      }
+    });
+
+    return detalles;
   };
 
   // Al cambiar de lista se reaplican los precios a todo el carrito. Es una acción
@@ -229,7 +331,9 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
       nombre = prendaLocal.producto?.nombre || 'Producto Genérico';
       color = prendaLocal.color;
       talla = prendaLocal.talla;
-      stockMaximo = Number(prendaLocal.stock);
+      // El tope es la talla completa, no solo el color escaneado: la línea del
+      // carrito agrupa todos los colores de esa talla.
+      stockMaximo = stockDeTalla(productoId, talla);
     } else {
       // 🚀 PLAN B (backend): no es del sistema → puede ser un QR de proveedor
       try {
@@ -247,15 +351,18 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
       }
     }
 
-    // 🎯 VALIDACIÓN INTELIGENTE: Buscamos en el carrito por variante real (ID + Color + Talla)
-    // Esto evita duplicar filas si escanean el QR de fábrica o ingresan el código manual
-    const itemEnCarrito = carrito.value.find(
-      c => c.productoId === productoId && c.color === color && c.talla === talla
-    );
+    // 🎯 Buscamos en el carrito por prenda + talla (el color ya no separa líneas):
+    // escanear la etiqueta del sistema, el QR de fábrica o tocar la grilla suman
+    // todos sobre la misma fila.
+    const claveEscaneada = claveLinea(productoId, talla);
+    const itemEnCarrito = carrito.value.find(c => claveDe(c) === claveEscaneada);
 
     if (itemEnCarrito) {
       // Refrescamos el tope con el stock recién consultado antes de subir la cantidad
       itemEnCarrito.stockMaximo = stockMaximo;
+      // La línea pudo abrirse tocando la grilla (sin color). El escaneo sí trae el
+      // color real, así que queda anotado para el reparto del cobro.
+      if (!itemEnCarrito.colorPreferido && color) itemEnCarrito.colorPreferido = color;
       cambiarCantidad(itemEnCarrito, itemEnCarrito.cantidad + 1);
     } else {
       // Buscamos el producto local para leer sus dos listas de precio
@@ -268,7 +375,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
           sku, // Guardamos el código exacto que disparó el láser
           productoId,
           nombre,
-          color,
+          colorPreferido: color,
           talla,
           stockMaximo,
           producto: referenciaPrenda?.producto
@@ -287,21 +394,25 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     nextTick(() => inputEscaner.value?.focus());
   };
 
-  // 🔍 Agrega una prenda al carrito SIN escanear (buscándola en el inventario).
-  // Útil cuando la etiqueta está rota, borrosa o despegada.
+  /**
+   * 🔍 Agrega una prenda al carrito SIN escanear: tocando la grilla de tallas o
+   * eligiéndola del buscador. Útil cuando la etiqueta está rota o despegada.
+   *
+   * Acepta tanto una talla ya agrupada (lo que emite la grilla) como una fila
+   * suelta del inventario: en ambos casos solo se leen prenda y talla, porque el
+   * color no se decide en la caja.
+   */
   const agregarPrendaManual = (prenda: any) => {
     if (!bodegaSeleccionada.value) return alert('Selecciona una bodega primero.');
     if (!prenda) return;
 
     const productoId = Number(prenda.productoId || prenda.producto?.id);
     const nombre = prenda.producto?.nombre || 'Producto';
-    const color = prenda.color;
     const talla = prenda.talla;
-    const stockMaximo = Number(prenda.stock);
+    const stockMaximo = stockDeTalla(productoId, talla);
 
-    const itemEnCarrito = carrito.value.find(
-      (c) => c.productoId === productoId && c.color === color && c.talla === talla,
-    );
+    const clave = claveLinea(productoId, talla);
+    const itemEnCarrito = carrito.value.find((c) => claveDe(c) === clave);
 
     if (itemEnCarrito) {
       itemEnCarrito.stockMaximo = stockMaximo;
@@ -309,10 +420,9 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     } else {
       carrito.value.unshift(
         nuevaLinea({
-          sku: prenda.skuCalculado || `PRD${productoId}-${color}-${talla}`,
+          sku: `PRD${productoId}-${talla}`,
           productoId,
           nombre,
-          color,
           talla,
           stockMaximo,
           producto: prenda.producto
@@ -335,6 +445,6 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     clienteNombre, tipoVenta, metodoEntrega, destinoEnvio, modalTicket, ventaRealizada,
     totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual,
     cambiarCantidad, borradorRecuperado, limpiarBorrador,
-    avisos, descartarAviso
+    avisos, descartarAviso, construirDetalles
   };
 }

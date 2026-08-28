@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import api from '../api/axios'
+import { coincideSku } from '../utils/sku'
 import { useVentas } from '../composables/useVentas'
 import { useColaVentas } from '../composables/useColaVentas'
 
@@ -83,15 +84,10 @@ const {
   limpiarBorrador,
   avisos,
   descartarAviso,
+  construirDetalles,
 } = useVentas(inventarioConSKU, () => {})
 
 const { enviarVenta } = useColaVentas()
-
-// Muestra el NOMBRE del color (los vendedores no manejan códigos como "NGR")
-const nombreColor = (val: any) => {
-  const c = colores.value.find((x) => x.codigo === val || x.nombre === val)
-  return c ? c.nombre : val
-}
 
 // 🎯 Pestaña del área grande. Arranca en el carrito: es la lista que el vendedor
 // necesita tener a la vista mientras arma la venta.
@@ -102,22 +98,35 @@ const pestana = ref<'carrito' | 'grilla'>('carrito')
    La pistola dispara el SKU + Enter sobre este mismo campo, y si el vendedor
    escribe a mano aparecen las sugerencias. Un solo campo evita la duda de
    "¿dónde escribo?" cuando la etiqueta no lee.
+
+   Las sugerencias se agrupan por prenda + talla, sumando el stock de todos los
+   colores: la caja ya no vende por color.
    ────────────────────────────────────────────────────────────── */
 const resultadosBusqueda = computed(() => {
   const q = codigoEscaneado.value.trim().toLowerCase()
   // Menos de 2 letras no filtra nada útil, y evita que el desplegable parpadee
   // mientras la pistola teclea el código de golpe.
   if (q.length < 2 || !bodegaSeleccionada.value) return []
-  return inventarioConSKU.value
+
+  const porTalla = new Map<string, any>()
+  inventarioConSKU.value
     .filter(
       (i: any) => Number(i.bodegaId) === Number(bodegaSeleccionada.value) && Number(i.stock) > 0,
     )
     .filter((i: any) => {
-      const txt =
-        `${i.producto?.nombre || ''} ${i.skuCalculado || ''} ${i.color} ${i.talla}`.toLowerCase()
+      const txt = `${i.producto?.nombre || ''} ${i.skuCalculado || ''} ${i.talla}`.toLowerCase()
       return txt.includes(q)
     })
-    .slice(0, 25)
+    .forEach((i: any) => {
+      const productoId = Number(i.productoId || i.producto?.id)
+      const clave = `${productoId}-${i.talla}`
+      if (!porTalla.has(clave)) {
+        porTalla.set(clave, { clave, productoId, talla: i.talla, producto: i.producto, stock: 0 })
+      }
+      porTalla.get(clave).stock += Number(i.stock) || 0
+    })
+
+  return Array.from(porTalla.values()).slice(0, 25)
 })
 
 const seleccionarPrenda = (prenda: any) => {
@@ -127,10 +136,19 @@ const seleccionarPrenda = (prenda: any) => {
   nextTick(() => inputEscaner.value?.focus())
 }
 
+// ¿Lo tecleado es un código de etiqueta? Ese camino tiene prioridad porque la
+// etiqueta trae el color real, y ese dato no se estima: se registra tal cual.
+const pareceEtiqueta = computed(() => {
+  const q = codigoEscaneado.value.trim()
+  if (!q) return false
+  return inventarioConSKU.value.some((i: any) => coincideSku(q, i.skuCalculado))
+})
+
 // Enter con sugerencias abiertas agrega la prenda; sin sugerencias es un código
 // de la pistola (o un QR de proveedor) y se procesa como escaneo de siempre.
 const alPresionarEnter = () => {
   if (!codigoEscaneado.value.trim()) return
+  if (pareceEtiqueta.value) return procesarEscaneo()
   const encontradas = resultadosBusqueda.value
   if (encontradas.length === 0) return procesarEscaneo()
   if (encontradas.length === 1) return seleccionarPrenda(encontradas[0])
@@ -220,13 +238,9 @@ const enviarVentaBackend = async () => {
     metodoEntrega: metodoEntrega.value,
     requiereEnvio: metodoEntrega.value === 'ENVIO_AGENCIA',
     destinoEnvio: metodoEntrega.value === 'ENVIO_AGENCIA' ? destinoEnvio.value : undefined,
-    detalles: carrito.value.map((c: any) => ({
-      productoId: Number(c.productoId),
-      color: String(c.color),
-      talla: String(c.talla),
-      cantidad: Number(c.cantidad),
-      precioUnitario: Number(c.precioUnitario),
-    })),
+    // 🎨 La caja vendió por talla; aquí se reparte por color para que el almacén
+    // descuente de variantes reales (ver `construirDetalles` en useVentas).
+    detalles: construirDetalles(),
     condicionPago: condicionPago.value,
     clienteId: clienteId.value ? Number(clienteId.value) : undefined,
     adelanto: Number(adelanto.value) || 0,
@@ -352,7 +366,7 @@ onMounted(() => {
               type="text"
               v-model="codigoEscaneado"
               @keyup.enter="alPresionarEnter"
-              placeholder="Escanea el código o escribe nombre, SKU, color o talla..."
+              placeholder="Escanea el código o escribe el nombre o la talla..."
               class="flex-1 min-w-0 bg-transparent text-white text-base md:text-lg font-bold outline-none placeholder-gray-600 py-1.5"
             />
             <button
@@ -376,22 +390,16 @@ onMounted(() => {
           >
             <button
               v-for="p in resultadosBusqueda"
-              :key="p.id"
+              :key="p.clave"
               @click="seleccionarPrenda(p)"
               class="w-full text-left px-4 py-3 hover:bg-blue-50 active:bg-blue-100 border-b border-gray-50 last:border-none flex justify-between items-center gap-3"
             >
               <div class="min-w-0">
                 <p class="font-black text-gray-800 text-sm truncate">{{ p.producto?.nombre }}</p>
-                <div class="flex flex-wrap gap-1 mt-1">
-                  <span class="text-[10px] font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded"
-                    >T. {{ p.talla }}</span
-                  >
-                  <span
-                    class="text-[10px] font-bold bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded"
-                    >{{ nombreColor(p.color) }}</span
-                  >
-                  <span class="text-[10px] font-mono text-gray-400">{{ p.skuCalculado }}</span>
-                </div>
+                <span
+                  class="inline-block text-[10px] font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded mt-1"
+                  >Talla {{ p.talla }}</span
+                >
               </div>
               <span class="text-[11px] font-black text-emerald-600 shrink-0">{{ p.stock }} u.</span>
             </button>
@@ -481,26 +489,19 @@ onMounted(() => {
               <div v-else class="space-y-2.5">
                 <div
                   v-for="(item, index) in carrito"
-                  :key="item.sku"
+                  :key="item.clave || item.sku"
                   class="bg-white border border-gray-200 rounded-2xl p-3 md:px-4 flex flex-col md:flex-row md:items-center gap-3 hover:border-gray-300 transition-colors"
                 >
-                  <!-- Identificación -->
+                  <!-- Identificación (sin color: la caja vende por talla) -->
                   <div class="flex-1 min-w-0">
                     <p class="font-black text-gray-800 text-sm md:text-base leading-tight">
                       {{ item.nombre }}
                     </p>
                     <div class="flex flex-wrap gap-1.5 mt-1.5">
                       <span
-                        class="text-[11px] md:text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100"
+                        class="text-[12px] md:text-[11px] font-black bg-blue-50 text-blue-700 px-2.5 py-1 md:py-0.5 rounded border border-blue-100"
                         >Talla {{ item.talla }}</span
                       >
-                      <span
-                        class="text-[11px] md:text-[10px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-100"
-                        >{{ nombreColor(item.color) }}</span
-                      >
-                      <span class="text-[10px] md:text-[9px] font-mono text-gray-400 py-0.5">{{
-                        item.sku
-                      }}</span>
                       <span
                         v-if="item.stockForzado"
                         class="text-[11px] md:text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200"
@@ -588,11 +589,10 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- ── Grilla táctil: toca la prenda, luego la celda de talla y color ── -->
+          <!-- ── Grilla táctil: toca la prenda, luego la talla ── -->
           <div v-show="pestana === 'grilla'" class="flex-1 min-h-0">
             <GrillaPrendas
               :inventario="inventarioConSKU"
-              :colores="colores"
               :carrito="carrito"
               :bodegaId="bodegaSeleccionada"
               :listaPrecio="tipoVenta"
