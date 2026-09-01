@@ -173,6 +173,27 @@ const totalDeudaGeneral = computed(() => {
   return deudores.value.reduce((sum, cliente) => sum + Number(cliente.saldoPendiente), 0);
 });
 
+// 🔎 BUSCADOR DE DEUDORES
+// Con la cartera grande, ubicar a alguien entre las tarjetas obligaba a recorrer
+// toda la lista a ojo. Busca por nombre y también por el correlativo de la venta,
+// porque el cliente muchas veces llama citando el número de su ticket.
+const busqueda = ref('');
+
+const deudoresFiltrados = computed(() => {
+  const q = busqueda.value.trim().toLowerCase();
+  if (!q) return deudores.value;
+  return deudores.value.filter((cliente) => {
+    if (cliente.nombre.toLowerCase().includes(q)) return true;
+    return cliente.ventas?.some((v) => String(v.correlativo).toLowerCase().includes(q));
+  });
+});
+
+// Cuánto suma lo que está a la vista. El total de la cabecera sigue siendo el de
+// TODA la cartera: al filtrar, ese número no debe moverse.
+const totalFiltrado = computed(() => {
+  return deudoresFiltrados.value.reduce((sum, cliente) => sum + Number(cliente.saldoPendiente), 0);
+});
+
 const abrirModalPago = (cliente: ClienteDeudor) => {
   clienteSeleccionado.value = cliente;
   pago.value.monto = Number(cliente.saldoPendiente); // Por defecto sugiere pagar todo
@@ -242,6 +263,39 @@ onMounted(() => {
 </button>
       </header>
 
+      <!-- 🔎 BUSCADOR: ubicar al deudor sin recorrer todas las tarjetas -->
+      <div
+        v-if="!cargando && deudores.length > 0"
+        class="bg-white rounded-3xl shadow-sm border border-slate-100 p-4 md:p-5 flex flex-col sm:flex-row sm:items-center gap-4"
+      >
+        <div class="relative flex-1 min-w-0">
+          <span class="absolute left-4 top-1/2 -translate-y-1/2 text-lg pointer-events-none">🔎</span>
+          <input
+            v-model="busqueda"
+            type="text"
+            placeholder="Buscar deudor por nombre o número de venta..."
+            class="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-12 py-4 font-bold text-slate-700 placeholder-slate-400 outline-none focus:bg-white focus:border-emerald-500 transition-colors"
+          />
+          <button
+            v-if="busqueda"
+            @click="busqueda = ''"
+            class="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 hover:text-slate-700 font-black text-sm flex items-center justify-center transition-colors"
+            title="Limpiar búsqueda"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="shrink-0 sm:text-right px-1">
+          <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            {{ deudoresFiltrados.length }}
+            {{ deudoresFiltrados.length === 1 ? 'cliente' : 'clientes' }}
+            <span v-if="busqueda.trim()">encontrado{{ deudoresFiltrados.length === 1 ? '' : 's' }}</span>
+          </p>
+          <p class="text-xl font-black text-slate-800 leading-tight">S/ {{ totalFiltrado.toFixed(2) }}</p>
+        </div>
+      </div>
+
       <div v-if="cargando" class="flex justify-center py-20">
         <div class="w-12 h-12 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
       </div>
@@ -252,8 +306,23 @@ onMounted(() => {
         <p class="text-slate-500 mt-2">Ningún cliente tiene deudas pendientes en este momento.</p>
       </div>
 
+      <!-- Hay deudores, pero ninguno coincide con lo buscado -->
+      <div v-else-if="deudoresFiltrados.length === 0" class="bg-white p-16 rounded-3xl shadow-sm border border-slate-100 text-center">
+        <span class="text-6xl mb-4 block">🔍</span>
+        <h2 class="text-2xl font-black text-slate-800">Sin coincidencias</h2>
+        <p class="text-slate-500 mt-2">
+          Ningún deudor coincide con «{{ busqueda }}». Revisa el nombre o el número de venta.
+        </p>
+        <button
+          @click="busqueda = ''"
+          class="mt-6 bg-slate-900 text-white font-black px-6 py-3 rounded-2xl hover:bg-slate-800 transition-colors text-xs uppercase tracking-wider"
+        >
+          Ver todos los deudores
+        </button>
+      </div>
+
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div v-for="cliente in deudores" :key="cliente.id" class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 flex flex-col hover:shadow-xl transition-all group">
+        <div v-for="cliente in deudoresFiltrados" :key="cliente.id" class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 flex flex-col hover:shadow-xl transition-all group">
           
           <div class="flex justify-between items-start mb-6">
             <div>
