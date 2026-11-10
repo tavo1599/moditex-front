@@ -80,6 +80,13 @@ const router = createRouter({
       meta: SOLO_ADMIN
     },
     {
+      path: '/caja',
+      name: 'caja',
+      component: () => import('../views/CajaRapidaView.vue'),
+      // pantallaCompleta oculta el sidebar: el cajero solo ve la caja.
+      meta: { pantallaCompleta: true }
+    },
+    {
       path: '/punto-venta',
       name: 'punto-venta',
       component: () => import('../views/PuntoVentaView.vue')
