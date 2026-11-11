@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import api from '../api/axios'
-import { coincideSku } from '../utils/sku'
+import { coincideConPrenda } from '../utils/sku'
 import { useVentas } from '../composables/useVentas'
 import { useColaVentas } from '../composables/useColaVentas'
 
@@ -114,7 +114,7 @@ const resultadosBusqueda = computed(() => {
       (i: any) => Number(i.bodegaId) === Number(bodegaSeleccionada.value) && Number(i.stock) > 0,
     )
     .filter((i: any) => {
-      const txt = `${i.producto?.nombre || ''} ${i.skuCalculado || ''} ${i.talla}`.toLowerCase()
+      const txt = `${i.producto?.nombre || ''} ${i.skuCalculado || ''} ${i.producto?.codigoBarras || ''} ${i.talla}`.toLowerCase()
       return txt.includes(q)
     })
     .forEach((i: any) => {
@@ -141,7 +141,7 @@ const seleccionarPrenda = (prenda: any) => {
 const pareceEtiqueta = computed(() => {
   const q = codigoEscaneado.value.trim()
   if (!q) return false
-  return inventarioConSKU.value.some((i: any) => coincideSku(q, i.skuCalculado))
+  return inventarioConSKU.value.some((i: any) => coincideConPrenda(q, i))
 })
 
 // Enter con sugerencias abiertas agrega la prenda; sin sugerencias es un código

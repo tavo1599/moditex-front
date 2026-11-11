@@ -73,6 +73,28 @@ const router = createRouter({
       name: 'almacen-terminados',
       component: () => import('../views/AlmacenTerminadosView.vue')
     },
+    // ----------------------------------------------------------------
+    // RECORRIDO DE LA TELA: Rollos → Transformación → Terminados → Venta
+    // ----------------------------------------------------------------
+    {
+      path: '/rollos',
+      name: 'rollos',
+      component: () => import('../views/RollosView.vue'),
+      meta: SOLO_ADMIN
+    },
+    {
+      path: '/transformacion',
+      name: 'transformacion',
+      component: () => import('../views/TransformacionView.vue'),
+      meta: SOLO_ADMIN
+    },
+    // Compra de ropa ya hecha: general (sin talla ni color) + códigos de barras
+    {
+      path: '/mercaderia',
+      name: 'mercaderia',
+      component: () => import('../views/MercaderiaView.vue'),
+      meta: SOLO_ADMIN
+    },
     {
       path: '/traslados',
       name: 'traslados',

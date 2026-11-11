@@ -32,7 +32,43 @@ export const coincideSku = (codigoEscaneado: any, skuCandidato: any): boolean =>
   const codigo = normalizarCodigo(codigoEscaneado);
   const sku = normalizarCodigo(skuCandidato);
   if (!codigo || !sku) return false;
-  return codigo === sku || compactarSku(codigo) === compactarSku(sku);
+  if (codigo === sku) return true;
+
+  const a = compactarSku(codigo);
+  const b = compactarSku(sku);
+  if (a === b) return true;
+
+  // Códigos de MERCADERÍA COMPRADA: son puro número ('000123'). Los comparamos
+  // como número para que el cajero pueda teclear '123' cuando la pistola falle
+  // y se reconozca igual que la etiqueta impresa '000123'.
+  if (/^\d+$/.test(a) && /^\d+$/.test(b)) return Number(a) === Number(b);
+
+  return false;
+};
+
+/**
+ * ¿Parece el código corto de mercadería comprada? Es puro número.
+ * Nuestras etiquetas de producción siempre llevan letras (el código de color),
+ * así que un código solo de dígitos nunca choca con ellas.
+ */
+export const esCodigoMercaderia = (valor: any): boolean =>
+  /^\d{1,9}$/.test(normalizarCodigo(valor));
+
+/**
+ * ¿El código escaneado apunta a esta fila de inventario?
+ *
+ * Mira los DOS códigos que puede tener una prenda:
+ *   • skuCalculado  → etiqueta de nuestra producción ('PRD4-MLC-S' o '4MLCS')
+ *   • codigoBarras  → código corto de mercadería comprada ('000123')
+ *
+ * Es la función que deben usar las pantallas de venta: así una sola llamada
+ * reconoce las etiquetas propias y las de mercadería sin lógica duplicada.
+ */
+export const coincideConPrenda = (codigoEscaneado: any, item: any): boolean => {
+  if (!item) return false;
+  if (coincideSku(codigoEscaneado, item.skuCalculado)) return true;
+  const codigoMercaderia = item.codigoBarras ?? item.producto?.codigoBarras;
+  return codigoMercaderia ? coincideSku(codigoEscaneado, codigoMercaderia) : false;
 };
 
 export interface PrendaEscaneada {

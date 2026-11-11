@@ -1,6 +1,6 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import api from '../api/axios';
-import { coincideSku, normalizarCodigo } from '../utils/sku';
+import { normalizarCodigo, coincideConPrenda } from '../utils/sku';
 
 // Recordamos la última bodega elegida para no tener que seleccionarla cada vez
 // que se cambia de vista (se guarda en el navegador y se puede cambiar normal).
@@ -318,10 +318,11 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     let stockMaximo = 0;
 
     // 🔄 PLAN A (local): las etiquetas del sistema se resuelven directo con el
-    // inventario. coincideSku reconoce el formato completo y el compacto.
+    // inventario. coincideConPrenda reconoce la etiqueta de producción (formato
+    // completo y compacto) y el código corto de la mercadería comprada.
     const bodega = Number(bodegaSeleccionada.value);
     const prendaLocal = inventarioConSKURef.value.find(
-      (i: any) => Number(i.bodegaId) === bodega && coincideSku(sku, i.skuCalculado)
+      (i: any) => Number(i.bodegaId) === bodega && coincideConPrenda(sku, i)
     );
 
     if (prendaLocal) {

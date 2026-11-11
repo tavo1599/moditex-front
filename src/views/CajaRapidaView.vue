@@ -5,7 +5,7 @@ import api from '../api/axios'
 import { useVentas } from '../composables/useVentas'
 import { useColaVentas } from '../composables/useColaVentas'
 import { ordenarTallas } from '../utils/tallas'
-import { coincideSku } from '../utils/sku'
+import { coincideConPrenda } from '../utils/sku'
 
 import ModalTicketVenta from '../components/ModalTicketVenta.vue'
 import PanelVentasPendientes from '../components/ventas/PanelVentasPendientes.vue'
@@ -158,7 +158,7 @@ const prendas = computed(() => {
 const pareceEtiqueta = computed(() => {
   const q = codigoEscaneado.value.trim()
   if (!q) return false
-  return inventarioBodega.value.some((i: any) => coincideSku(q, i.skuCalculado))
+  return inventarioBodega.value.some((i: any) => coincideConPrenda(q, i))
 })
 
 /**
