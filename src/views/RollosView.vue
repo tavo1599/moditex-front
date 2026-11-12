@@ -400,7 +400,7 @@ const fechaHora = (f: string) => new Date(f).toLocaleString('es-PE', { day: '2-d
 
             <div>
               <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-2">
-                Costo por kilo (S/)
+                Costo por kilo (S/) <span class="text-slate-400 normal-case">(opcional)</span>
               </label>
               <input
                 v-model.number="form.costoPorKilo" type="number" step="0.01" min="0" placeholder="0.00"
@@ -408,6 +408,7 @@ const fechaHora = (f: string) => new Date(f).toLocaleString('es-PE', { day: '2-d
               />
               <p class="text-xs text-slate-500 mt-1">
                 Sirve para saber cuánto cuesta cada prenda cuando se corte la tela.
+                Si todavía no lo sabes, déjalo en 0.
               </p>
             </div>
           </div>
