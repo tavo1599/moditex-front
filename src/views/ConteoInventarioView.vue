@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import api from '../api/axios';
+import { ordenarTallas } from '../utils/tallas';
 
 const bodegas = ref<any[]>([]);
 const inventario = ref<any[]>([]);
@@ -54,6 +55,92 @@ const itemsBodega = computed(() => {
       return txt.includes(q);
     });
 });
+
+// ===========================================================================
+// EL CONTEO COMO MATRIZ · tallas arriba, colores a la izquierda
+// ---------------------------------------------------------------------------
+// Es como está la ropa en el almacén y es el mismo formato que usan
+// Transformación (al cortar y al recibir) y los reportes, así que el que
+// cuenta no tiene que aprender dos formas de mirar lo mismo.
+//
+// Se puede contar TODA la bodega (una matriz por prenda) o una prenda
+// específica (una sola matriz).
+// ===========================================================================
+const productoSel = ref<any>('');
+
+/** Las prendas que de verdad hay en la bodega elegida, para el desplegable. */
+const productosEnBodega = computed(() => {
+  const mapa = new Map<number, string>();
+  for (const it of itemsBodega.value) {
+    mapa.set(Number(it.productoId), it.producto?.nombre || nombreProducto(it.productoId));
+  }
+  return [...mapa.entries()]
+    .map(([id, nombre]) => ({ id, nombre }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+});
+
+/**
+ * Una matriz por prenda: sus tallas (en orden natural), sus colores y la
+ * casilla de cada cruce. Si el cruce no existe en el sistema, la casilla
+ * viene vacía y se puede dar de alta con el botón +.
+ */
+const matrices = computed(() => {
+  const porProducto = new Map<number, any[]>();
+  for (const it of itemsBodega.value) {
+    if (productoSel.value && Number(it.productoId) !== Number(productoSel.value)) continue;
+    const id = Number(it.productoId);
+    if (!porProducto.has(id)) porProducto.set(id, []);
+    porProducto.get(id)!.push(it);
+  }
+
+  return [...porProducto.entries()]
+    .map(([productoId, items]) => {
+      const tallas = ordenarTallas([...new Set(items.map((i) => String(i.talla)))]);
+      const colores = [...new Set(items.map((i) => nombreColor(i.color)))].sort();
+      const casillas = new Map<string, any>();
+      for (const it of items) casillas.set(`${nombreColor(it.color)}|${it.talla}`, it);
+      return {
+        productoId,
+        nombre: items[0]?.producto?.nombre || nombreProducto(productoId),
+        tallas,
+        colores,
+        casillas,
+        items,
+      };
+    })
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+});
+
+const casillaDe = (m: any, color: string, talla: string) => m.casillas.get(`${color}|${talla}`) || null;
+
+/** Lo contado en una casilla (vacío = todavía sin contar). */
+const contadoDe = (m: any, color: string, talla: string) => {
+  const it = casillaDe(m, color, talla);
+  if (!it) return 0;
+  const v = conteos.value[it.id];
+  return v === '' || v == null ? 0 : Number(v) || 0;
+};
+
+const sistemaDe = (m: any, color: string, talla: string) => Number(casillaDe(m, color, talla)?.stock) || 0;
+
+const totalFilaContado = (m: any, color: string) =>
+  m.tallas.reduce((s: number, t: string) => s + contadoDe(m, color, t), 0);
+const totalColumnaContado = (m: any, talla: string) =>
+  m.colores.reduce((s: number, c: string) => s + contadoDe(m, c, talla), 0);
+const totalContadoMatriz = (m: any) =>
+  m.colores.reduce((s: number, c: string) => s + totalFilaContado(m, c), 0);
+const totalSistemaMatriz = (m: any) =>
+  m.items.reduce((s: number, it: any) => s + Number(it.stock || 0), 0);
+
+const avisoVariante = ref('');
+
+/** Prepara el alta de una variante que existe físicamente pero no en el sistema. */
+const prepararVariante = (m: any, color: string, talla: string) => {
+  formNuevo.value = { productoId: String(m.productoId), color, talla, cantidad: 1 };
+  avisoVariante.value = `${m.nombre} · ${color} · ${talla}: escribe cuántas hay y pulsa Agregar.`;
+  setTimeout(() => (avisoVariante.value = ''), 8000);
+  document.getElementById('panel-variante')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
 
 // Al cambiar de bodega o recargar, inicializamos el conteo = stock actual del sistema
 watch([itemsBodega], () => {
@@ -184,6 +271,171 @@ const guardar = async () => {
   }
 };
 
+// ===========================================================================
+// REPORTE DEL CONTEO · la misma matriz, para imprimir o bajar a Excel
+// ---------------------------------------------------------------------------
+// Dos usos distintos:
+//   • HOJA PARA CONTAR  → se imprime con las casillas vacías y se cuenta a
+//     mano, caminando por el almacén con la hoja y un lápiz.
+//   • RESULTADO         → lo que dice el sistema, lo que se contó y la
+//     diferencia de cada casilla.
+// ===========================================================================
+const mostrarReporteConteo = ref(false);
+const repModo = ref<'hoja' | 'resultado'>('hoja');
+// En la hoja para contar, mostrar el stock del sistema es opcional: a veces
+// conviene contar "a ciegas" para que el número del sistema no influya.
+const repMostrarSistema = ref(false);
+
+const nombreBodega = computed(
+  () => bodegas.value.find((b: any) => b.id === Number(bodegaSel.value))?.nombre || '',
+);
+
+const hoyTexto = () => new Date().toLocaleString('es-PE');
+
+const exportarConteo = () => {
+  const filas: any[][] = [
+    ['REPORTE DE CONTEO DE PRENDAS'],
+    ['Almacén', nombreBodega.value],
+    ['Generado', hoyTexto()],
+    ['Prenda', productoSel.value ? nombreProducto(productoSel.value) : 'Todas'],
+  ];
+
+  for (const m of matrices.value) {
+    filas.push([], [`PRENDA: ${m.nombre}`]);
+
+    for (const [titulo, valor] of [
+      ['STOCK DEL SISTEMA', (c: string, t: string) => sistemaDe(m, c, t)],
+      ['CONTADO FÍSICO', (c: string, t: string) => contadoDe(m, c, t)],
+      ['DIFERENCIA', (c: string, t: string) => contadoDe(m, c, t) - sistemaDe(m, c, t)],
+    ] as [string, (c: string, t: string) => number][]) {
+      filas.push([titulo]);
+      filas.push(['COLOR', ...m.tallas, 'TOTAL']);
+      for (const c of m.colores) {
+        const celdas = m.tallas.map((t: string) => (casillaDe(m, c, t) ? valor(c, t) : ''));
+        const total = m.tallas.reduce((s: number, t: string) => s + (casillaDe(m, c, t) ? valor(c, t) : 0), 0);
+        filas.push([c, ...celdas, total]);
+      }
+      filas.push([
+        'TOTAL',
+        ...m.tallas.map((t: string) =>
+          m.colores.reduce((s: number, c: string) => s + (casillaDe(m, c, t) ? valor(c, t) : 0), 0),
+        ),
+        m.colores.reduce(
+          (s: number, c: string) =>
+            s + m.tallas.reduce((x: number, t: string) => x + (casillaDe(m, c, t) ? valor(c, t) : 0), 0),
+          0,
+        ),
+      ]);
+      filas.push([]);
+    }
+  }
+
+  // BOM + punto y coma: así Excel en español abre las columnas bien.
+  const csv = '\ufeff' + filas.map((f) => f.join(';')).join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `conteo_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const imprimirConteo = () => {
+  const esc = (v: any) =>
+    String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const esHoja = repModo.value === 'hoja';
+
+  const bloques = matrices.value
+    .map((m: any) => {
+      const encabezado = m.tallas.map((t: string) => `<th>${esc(t)}</th>`).join('');
+
+      const cuerpo = m.colores
+        .map((c: string) => {
+          const celdas = m.tallas
+            .map((t: string) => {
+              if (!casillaDe(m, c, t)) return '<td class="nada">—</td>';
+              const sis = sistemaDe(m, c, t);
+              if (esHoja) {
+                return `<td class="caja">${repMostrarSistema.value ? `<span class="sis">${sis}</span>` : ''}</td>`;
+              }
+              const con = contadoDe(m, c, t);
+              const dif = con - sis;
+              const signo = dif > 0 ? `+${dif}` : String(dif);
+              return `<td class="res">
+                <span class="sis">${sis}</span>
+                <b>${con}</b>
+                <span class="${dif === 0 ? 'ok' : dif > 0 ? 'mas' : 'menos'}">${dif === 0 ? '=' : signo}</span>
+              </td>`;
+            })
+            .join('');
+          const total = esHoja
+            ? '<td class="caja"></td>'
+            : `<td class="tot">${m.tallas.reduce((s: number, t: string) => s + contadoDe(m, c, t), 0)}</td>`;
+          return `<tr><th class="color">${esc(c)}</th>${celdas}${total}</tr>`;
+        })
+        .join('');
+
+      const pie = esHoja
+        ? `<tr><th class="color">TOTAL</th>${m.tallas.map(() => '<td class="caja"></td>').join('')}<td class="caja"></td></tr>`
+        : `<tr><th class="color">TOTAL</th>${m.tallas
+            .map((t: string) => `<td class="tot">${totalColumnaContado(m, t)}</td>`)
+            .join('')}<td class="tot">${totalContadoMatriz(m)}</td></tr>`;
+
+      return `<h2>${esc(m.nombre)}</h2>
+        <table>
+          <thead><tr><th class="color">Color \\ Talla</th>${encabezado}<th class="color">Total</th></tr></thead>
+          <tbody>${cuerpo}${pie}</tbody>
+        </table>`;
+    })
+    .join('');
+
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+    <title>Conteo de prendas</title>
+    <style>
+      *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box}
+      body{margin:22px;color:#111}
+      h1{font-size:18px;margin:0 0 4px}
+      .sub{font-size:11px;color:#555;margin-bottom:14px}
+      h2{font-size:13px;margin:16px 0 6px;padding:4px 8px;background:#eee;border-radius:4px}
+      table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px}
+      th,td{border:1px solid #bbb;padding:6px 4px;text-align:center}
+      th{background:#222;color:#fff;font-size:10px;text-transform:uppercase}
+      th.color{background:#444;text-align:left;white-space:nowrap}
+      td.caja{height:34px}
+      td.nada{color:#ccc;background:#fafafa}
+      td.res b{display:block;font-size:14px}
+      .sis{font-size:9px;color:#777}
+      .ok{font-size:9px;color:#888}
+      .mas{font-size:10px;color:#0a7}
+      .menos{font-size:10px;color:#c33}
+      td.tot{background:#f3f3f3;font-weight:bold}
+      .pie{margin-top:14px;font-size:9px;color:#777;border-top:1px solid #ddd;padding-top:6px}
+      .firma{margin-top:26px;font-size:10px}
+      .firma span{display:inline-block;border-top:1px solid #777;width:220px;margin-right:30px;padding-top:4px}
+    </style></head><body>
+    <h1>${esHoja ? 'HOJA PARA CONTAR PRENDAS' : 'RESULTADO DEL CONTEO'}</h1>
+    <div class="sub">
+      Almacén: <b>${esc(nombreBodega.value)}</b> ·
+      ${esc(productoSel.value ? nombreProducto(productoSel.value) : 'todas las prendas')} ·
+      ${esc(hoyTexto())}
+    </div>
+    ${bloques || '<p>No hay prendas para contar.</p>'}
+    <div class="pie">
+      ${esHoja
+        ? 'Escribe en cada casilla cuántas prendas contaste. Las casillas con — no existen en el sistema: si encuentras prendas ahí, anótalas al margen y dalas de alta como variante nueva.'
+        : 'En cada casilla: arriba el stock del sistema, en grande lo contado y al lado la diferencia.'}
+    </div>
+    <div class="firma"><span>Contó</span><span>Revisó</span></div>
+    </body></html>`;
+
+  const v = window.open('', '_blank', 'width=1000,height=700');
+  if (!v) { alert('El navegador bloqueó la ventana de impresión.'); return; }
+  v.document.write(html);
+  v.document.close();
+  v.focus();
+  setTimeout(() => v.print(), 300);
+};
+
 onMounted(cargarTodo);
 </script>
 
@@ -204,8 +456,20 @@ onMounted(cargarTodo);
         </select>
       </div>
       <div v-if="bodegaSel" class="flex-1 min-w-[220px]">
-        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Buscar prenda</label>
+        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Prenda a contar</label>
+        <select v-model="productoSel" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white outline-none focus:border-blue-500">
+          <option value="">Todas las prendas del almacén</option>
+          <option v-for="p in productosEnBodega" :key="p.id" :value="p.id">{{ p.nombre }}</option>
+        </select>
+      </div>
+      <div v-if="bodegaSel" class="flex-1 min-w-[180px]">
+        <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Buscar</label>
         <input v-model="busqueda" placeholder="Producto, color o talla..." class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-blue-500">
+      </div>
+      <div v-if="bodegaSel">
+        <button @click="mostrarReporteConteo = true" class="bg-slate-800 hover:bg-black text-white px-5 py-2.5 rounded-xl font-black text-sm shadow whitespace-nowrap">
+          📄 Hoja / Reporte
+        </button>
       </div>
     </div>
 
@@ -231,8 +495,11 @@ onMounted(cargarTodo);
       </div>
 
       <!-- Agregar variante nueva -->
-      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+      <div id="panel-variante" class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
         <p class="text-sm font-bold text-gray-700 mb-1">➕ Agregar variante que NO está en el sistema</p>
+        <p v-if="avisoVariante" class="mb-2 text-xs font-black text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          👉 {{ avisoVariante }}
+        </p>
         <p class="text-[11px] text-gray-400 mb-3">Úsalo solo si la prenda existe físicamente pero no aparece en la tabla de abajo.</p>
         <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
           <select v-model="formNuevo.productoId" class="border border-gray-300 rounded-lg p-2 text-sm bg-white col-span-2 md:col-span-2">
@@ -259,45 +526,126 @@ onMounted(cargarTodo);
         </div>
       </div>
 
-      <!-- Tabla de conteo -->
+      <!-- ==================================================================
+           CONTEO EN MATRIZ · tallas arriba, colores a la izquierda
+           El mismo formato del corte, de la recepción y de los reportes.
+           ================================================================== -->
       <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div v-if="cargando" class="py-16 text-center text-gray-400 text-sm">Cargando inventario...</div>
         <div v-else-if="!itemsBodega.length" class="py-16 text-center text-gray-400 text-sm">Este almacén no tiene prendas registradas.</div>
-        <div v-else class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead class="bg-gray-50 text-gray-500 font-bold uppercase text-[10px] tracking-wider">
-              <tr>
-                <th class="p-3 text-left">Producto</th>
-                <th class="p-3 text-left">Color</th>
-                <th class="p-3 text-center">Talla</th>
-                <th class="p-3 text-center">Stock sistema</th>
-                <th class="p-3 text-center">Conteo físico</th>
-                <th class="p-3 text-center">Diferencia</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100">
-              <tr v-for="it in itemsBodega" :key="it.id" class="hover:bg-gray-50">
-                <td class="p-3 font-bold text-gray-800">{{ it.producto?.nombre || nombreProducto(it.productoId) }}</td>
-                <td class="p-3 text-gray-600">{{ nombreColor(it.color) }}</td>
-                <td class="p-3 text-center font-bold text-gray-700">{{ it.talla }}</td>
-                <td class="p-3 text-center text-gray-500">{{ it.stock }}</td>
-                <td class="p-2 text-center">
-                  <input
-                    v-model.number="conteos[it.id]"
-                    type="number"
-                    min="0"
-                    class="w-20 border rounded-lg text-center py-1.5 outline-none font-bold"
-                    :class="diferencia(it) !== 0 ? 'border-blue-400 bg-blue-50' : 'border-gray-200 focus:border-blue-500'"
-                  >
-                </td>
-                <td class="p-3 text-center font-black">
-                  <span v-if="diferencia(it) > 0" class="text-emerald-600">+{{ diferencia(it) }}</span>
-                  <span v-else-if="diferencia(it) < 0" class="text-red-500">{{ diferencia(it) }}</span>
-                  <span v-else class="text-gray-300">—</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else-if="!matrices.length" class="py-16 text-center text-gray-400 text-sm">Ninguna prenda coincide con el filtro.</div>
+
+        <div v-else class="p-4 space-y-6">
+          <div v-for="m in matrices" :key="m.productoId">
+            <!-- Cabecera de la prenda -->
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <p class="font-black text-gray-800 text-lg">👕 {{ m.nombre }}</p>
+              <div class="flex flex-wrap gap-2 text-[11px] font-black">
+                <span class="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600">
+                  Sistema: {{ totalSistemaMatriz(m) }}
+                </span>
+                <span class="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700">
+                  Contado: {{ totalContadoMatriz(m) }}
+                </span>
+                <span
+                  class="px-3 py-1.5 rounded-lg"
+                  :class="totalContadoMatriz(m) - totalSistemaMatriz(m) === 0
+                    ? 'bg-gray-100 text-gray-400'
+                    : totalContadoMatriz(m) > totalSistemaMatriz(m)
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-rose-100 text-rose-700'"
+                >
+                  Diferencia:
+                  {{ totalContadoMatriz(m) - totalSistemaMatriz(m) > 0 ? '+' : '' }}{{ totalContadoMatriz(m) - totalSistemaMatriz(m) }}
+                </span>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border-2 border-gray-200">
+              <table class="w-full text-sm border-collapse">
+                <thead>
+                  <tr class="bg-gray-100">
+                    <th class="text-left px-3 py-2.5 text-[10px] uppercase tracking-wider text-gray-600 font-black sticky left-0 bg-gray-100 z-10">
+                      Color \ Talla
+                    </th>
+                    <th v-for="t in m.tallas" :key="t" class="px-2 py-2.5 text-center min-w-[88px]">
+                      <span class="inline-block bg-blue-600 text-white font-black text-sm px-3 py-1 rounded-lg">{{ t }}</span>
+                    </th>
+                    <th class="px-3 py-2.5 text-center text-[10px] uppercase tracking-wider text-gray-600 font-black bg-gray-200">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="c in m.colores" :key="c" class="border-t-2 border-gray-100">
+                    <td class="px-3 py-2 sticky left-0 bg-white z-10 border-r-2 border-gray-100">
+                      <span class="flex items-center gap-2 font-black text-gray-800 whitespace-nowrap">
+                        <span class="w-4 h-4 rounded border border-gray-300 shrink-0" :style="{ backgroundColor: colores.find((x) => x.nombre === c)?.codigoHex || '#94a3b8' }"></span>
+                        {{ c }}
+                      </span>
+                    </td>
+
+                    <td v-for="t in m.tallas" :key="t" class="px-2 py-2 align-top text-center">
+                      <!-- La prenda existe en el sistema: se cuenta aquí -->
+                      <template v-if="casillaDe(m, c, t)">
+                        <input
+                          v-model.number="conteos[casillaDe(m, c, t).id]"
+                          type="number" min="0"
+                          class="w-full border-2 rounded-xl h-11 text-center text-lg font-black outline-none"
+                          :class="contadoDe(m, c, t) === sistemaDe(m, c, t)
+                            ? 'border-gray-200 text-gray-700 focus:border-blue-500'
+                            : contadoDe(m, c, t) > sistemaDe(m, c, t)
+                              ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                              : 'border-rose-400 bg-rose-50 text-rose-700'"
+                        >
+                        <p class="text-[10px] font-bold mt-1 text-gray-400">
+                          sistema: {{ sistemaDe(m, c, t) }}
+                          <span
+                            v-if="contadoDe(m, c, t) !== sistemaDe(m, c, t)"
+                            :class="contadoDe(m, c, t) > sistemaDe(m, c, t) ? 'text-emerald-600' : 'text-rose-600'"
+                            class="font-black"
+                          >
+                            ({{ contadoDe(m, c, t) > sistemaDe(m, c, t) ? '+' : '' }}{{ contadoDe(m, c, t) - sistemaDe(m, c, t) }})
+                          </span>
+                        </p>
+                      </template>
+
+                      <!-- Ese cruce no existe en el sistema. Si aparecieron
+                           prendas, se dan de alta con un toque. -->
+                      <template v-else>
+                        <button
+                          @click="prepararVariante(m, c, t)"
+                          title="No existe en el sistema. Pulsa si encontraste prendas de este color y talla."
+                          class="w-full h-11 rounded-xl border-2 border-dashed border-gray-200 text-gray-300 hover:border-amber-400 hover:text-amber-500 hover:bg-amber-50 font-black text-lg"
+                        >+</button>
+                        <p class="text-[10px] font-bold mt-1 text-gray-300">no existe</p>
+                      </template>
+                    </td>
+
+                    <td class="px-3 py-2 text-center bg-gray-50 border-l-2 border-gray-100">
+                      <span class="text-xl font-black" :class="totalFilaContado(m, c) > 0 ? 'text-gray-800' : 'text-gray-300'">
+                        {{ totalFilaContado(m, c) }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr class="bg-gray-100 border-t-2 border-gray-200">
+                    <td class="px-3 py-2.5 font-black text-gray-700 uppercase text-[10px] tracking-wider sticky left-0 bg-gray-100 z-10">Total</td>
+                    <td v-for="t in m.tallas" :key="t" class="px-2 py-2.5 text-center text-lg font-black text-blue-700">
+                      {{ totalColumnaContado(m, t) }}
+                    </td>
+                    <td class="px-3 py-2.5 text-center bg-gray-200">
+                      <span class="text-2xl font-black text-gray-800">{{ totalContadoMatriz(m) }}</span>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <p class="text-[11px] text-gray-500 font-bold">
+            Debajo de cada casilla está el stock del sistema. Si lo que cuentas no coincide, la casilla
+            se pinta: 🟢 sobra, 🔴 falta. Las casillas con <b>+</b> no existen en el sistema todavía.
+          </p>
         </div>
 
         <!-- Footer -->
@@ -319,5 +667,87 @@ onMounted(cargarTodo);
     <div v-else class="bg-white rounded-xl shadow-sm border border-gray-100 py-16 text-center text-gray-400 text-sm">
       Selecciona un almacén para empezar el conteo.
     </div>
+    <!-- ====================================================================
+         REPORTE DEL CONTEO · la misma matriz, para imprimir o bajar a Excel
+         ==================================================================== -->
+    <div v-if="mostrarReporteConteo" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-[100] p-4 overflow-y-auto">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl my-4 overflow-hidden">
+
+        <div class="bg-gradient-to-r from-slate-800 to-gray-900 p-5 flex justify-between items-center text-white">
+          <div>
+            <h3 class="text-xl font-black">📄 Conteo de prendas · matriz color × talla</h3>
+            <p class="text-xs text-gray-300 font-medium">
+              {{ nombreBodega }} · {{ productoSel ? nombreProducto(productoSel) : 'todas las prendas' }}
+            </p>
+          </div>
+          <button @click="mostrarReporteConteo = false" class="text-white/70 hover:text-white text-3xl leading-none">&times;</button>
+        </div>
+
+        <div class="p-5 space-y-4">
+          <!-- Para qué es la hoja -->
+          <div class="grid md:grid-cols-2 gap-3">
+            <button
+              @click="repModo = 'hoja'"
+              class="text-left p-4 rounded-2xl border-2 transition-all"
+              :class="repModo === 'hoja' ? 'border-blue-500 bg-blue-50 shadow' : 'border-gray-200 hover:border-gray-300'"
+            >
+              <p class="font-black text-gray-800">✍️ Hoja para contar a mano</p>
+              <p class="text-xs text-gray-500 mt-1">
+                Se imprime con las casillas <b>vacías</b>: caminas por el almacén y vas escribiendo
+                cuántas prendas hay de cada color y talla.
+              </p>
+            </button>
+            <button
+              @click="repModo = 'resultado'"
+              class="text-left p-4 rounded-2xl border-2 transition-all"
+              :class="repModo === 'resultado' ? 'border-emerald-500 bg-emerald-50 shadow' : 'border-gray-200 hover:border-gray-300'"
+            >
+              <p class="font-black text-gray-800">✅ Resultado del conteo</p>
+              <p class="text-xs text-gray-500 mt-1">
+                Cada casilla con el stock del sistema, lo que contaste y la <b>diferencia</b>.
+                Sirve para revisar y archivar.
+              </p>
+            </button>
+          </div>
+
+          <label v-if="repModo === 'hoja'" class="flex items-center gap-2 bg-white border-2 border-gray-200 rounded-xl px-4 py-3 cursor-pointer">
+            <input type="checkbox" v-model="repMostrarSistema" class="w-4 h-4 accent-blue-600">
+            <span class="text-xs font-bold text-gray-700">Mostrar el stock del sistema en la hoja</span>
+            <span class="text-[11px] text-gray-400">(sin marcar se cuenta “a ciegas”, sin que el número influya)</span>
+          </label>
+
+          <!-- Qué va a salir -->
+          <div class="bg-gray-50 border-2 border-gray-200 rounded-2xl p-4">
+            <p class="text-[11px] font-black text-gray-600 uppercase tracking-wider mb-2">Va a salir</p>
+            <p v-if="!matrices.length" class="text-sm text-gray-400 font-bold">No hay prendas con el filtro actual.</p>
+            <ul v-else class="text-sm text-gray-700 font-bold space-y-1">
+              <li v-for="m in matrices" :key="m.productoId">
+                👕 {{ m.nombre }} — {{ m.colores.length }} color(es) × {{ m.tallas.length }} talla(s)
+                <span class="text-gray-400 font-medium">· sistema {{ totalSistemaMatriz(m) }}</span>
+              </li>
+            </ul>
+            <p class="text-[11px] text-gray-500 mt-2">
+              La hoja impresa lleva una línea para la firma de quien contó y de quien revisó.
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-gray-50 p-4 border-t-2 border-gray-200 flex flex-col md:flex-row justify-between items-center gap-3">
+          <p class="text-[11px] text-gray-500 font-bold">La misma matriz que ves en pantalla</p>
+          <div class="flex gap-2 w-full md:w-auto">
+            <button @click="imprimirConteo" :disabled="!matrices.length" class="flex-1 md:flex-none bg-slate-700 hover:bg-slate-800 disabled:bg-gray-300 text-white px-5 py-3 rounded-xl font-black text-sm shadow">
+              🖨️ Imprimir
+            </button>
+            <button @click="exportarConteo" :disabled="!matrices.length" class="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white px-5 py-3 rounded-xl font-black text-sm shadow">
+              ⬇️ Excel (CSV)
+            </button>
+            <button @click="mostrarReporteConteo = false" class="px-5 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-200">
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>

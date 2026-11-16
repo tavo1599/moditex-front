@@ -295,9 +295,81 @@ const totalARecibir = computed(() =>
   Object.values(recibidos.value).reduce((s, n) => s + (Number(n) || 0), 0),
 )
 
+// ---------------------------------------------------------------------------
+// LA RECEPCIÓN COMO MATRIZ:  tallas arriba · colores a la izquierda
+// ---------------------------------------------------------------------------
+// Es como la gente mira la ropa en el almacén, y es el mismo formato con el
+// que se cortó en el paso 2. Cada casilla es un color + una talla.
+// ---------------------------------------------------------------------------
+const detallesRecepcion = computed<any[]>(() => modalRecibir.value?.detalles || [])
+
+const tallasRecepcion = computed(() =>
+  ordenarTallas([...new Set(detallesRecepcion.value.map((d: any) => d.talla))]),
+)
+const coloresRecepcion = computed(() => [...new Set(detallesRecepcion.value.map((d: any) => d.color))])
+
+/** Busca la casilla del corte. Si no existe, esa combinación no se cortó. */
+const detalleDe = (color: string, talla: string) =>
+  detallesRecepcion.value.find((d: any) => d.color === color && d.talla === talla) || null
+
+/** Cuántas prendas de esa casilla faltan por recibir. */
+const faltaDe = (color: string, talla: string) => {
+  const d = detalleDe(color, talla)
+  return d ? Math.max(0, d.cantidad - d.cantidadRecibida) : 0
+}
+
+const enCasilla = (color: string, talla: string) => Number(recibidos.value[clave(color, talla)]) || 0
+
+const totalFilaRecepcion = (color: string) =>
+  tallasRecepcion.value.reduce((s, t) => s + enCasilla(color, t), 0)
+const totalColumnaRecepcion = (talla: string) =>
+  coloresRecepcion.value.reduce((s, c) => s + enCasilla(c, talla), 0)
+
+/**
+ * Casillas con más prendas de las que faltan: el backend las rechazaría.
+ * Solo cuentan las casillas que SÍ se cortaron. Una casilla que no estaba en
+ * el corte no tiene tope — si llegó, llegó — y se avisa aparte como extra.
+ */
+const casillasExcedidas = computed(() =>
+  coloresRecepcion.value.flatMap((c) =>
+    tallasRecepcion.value
+      .filter((t) => detalleDe(c, t) && enCasilla(c, t) > faltaDe(c, t))
+      .map((t) => ({ color: c, talla: t, puesto: enCasilla(c, t), falta: faltaDe(c, t) })),
+  ),
+)
+
+/** Lo que llegó sin estar en el corte. Se acepta: el almacén físico manda. */
+const casillasExtra = computed(() =>
+  Object.entries(recibidos.value)
+    .map(([k, n]) => {
+      const partes = k.split('|')
+      return { color: partes[0] || '', talla: partes[1] || '', cantidad: Number(n) || 0 }
+    })
+    .filter((e) => e.cantidad > 0 && !detalleDe(e.color, e.talla)),
+)
+
+const llenarConLoQueFalta = () => {
+  const nuevo: Record<string, number> = {}
+  for (const d of detallesRecepcion.value) {
+    const pendiente = d.cantidad - d.cantidadRecibida
+    if (pendiente > 0) nuevo[clave(d.color, d.talla)] = pendiente
+  }
+  recibidos.value = nuevo
+}
+const vaciarRecepcion = () => { recibidos.value = {} }
+
+const razonBloqueoRecepcion = computed(() => {
+  if (!bodegaDestinoId.value) return 'Elige a qué bodega entra la producción.'
+  const primera = casillasExcedidas.value[0]
+  if (primera) {
+    return `${primera.color} talla ${primera.talla}: pusiste ${primera.puesto} y solo faltan ${primera.falta}.`
+  }
+  if (totalARecibir.value <= 0) return 'Escribe en la matriz cuántas prendas llegaron del taller.'
+  return ''
+})
+
 const confirmarRecepcion = async () => {
-  if (!bodegaDestinoId.value) return avisar('Elige a qué bodega entra la producción.', 'error')
-  if (totalARecibir.value <= 0) return avisar('Indica cuántas prendas llegaron del taller.', 'error')
+  if (razonBloqueoRecepcion.value) return avisar(razonBloqueoRecepcion.value, 'error')
 
   const lista = Object.entries(recibidos.value)
     .map(([k, cantidad]) => {
@@ -355,7 +427,66 @@ const anularCorte = async (corte: any) => {
 const reporte = ref<any>(null)
 const repDesde = ref('')
 const repHasta = ref('')
+// La prenda elegida: el reporte se puede sacar de TODA la ropa o de una sola.
+const repProductoId = ref<any>('')
 const cargandoReporte = ref(false)
+
+// ---------------------------------------------------------------------------
+// MATRIZ DEL REPORTE · tallas arriba, colores a la izquierda
+// ---------------------------------------------------------------------------
+// El mismo formato de la recepción y del corte, para que el reporte se lea
+// igual que se trabaja. Se puede mirar lo cortado, lo recibido o lo que falta.
+// ---------------------------------------------------------------------------
+type VistaMatriz = 'cortadas' | 'recibidas' | 'pendientes'
+const repVista = ref<VistaMatriz>('cortadas')
+
+const ETIQUETA_VISTA: Record<VistaMatriz, string> = {
+  cortadas: 'Cortadas',
+  recibidas: 'Recibidas',
+  pendientes: 'Faltan por llegar',
+}
+
+const matrizTallas = computed(() => ordenarTallas(reporte.value?.matriz?.tallas || []))
+const matrizColores = computed(() => [...(reporte.value?.matriz?.colores || [])].sort())
+
+const celdasPorCasilla = computed(() => {
+  const mapa = new Map<string, any>()
+  for (const c of reporte.value?.matriz?.celdas || []) mapa.set(clave(c.color, c.talla), c)
+  return mapa
+})
+
+const valorCelda = (color: string, talla: string) => {
+  const c = celdasPorCasilla.value.get(clave(color, talla))
+  if (!c) return 0
+  if (repVista.value === 'cortadas') return c.cortadas
+  if (repVista.value === 'recibidas') return c.recibidas
+  return Math.max(0, c.cortadas - c.recibidas)
+}
+
+const totalFilaMatriz = (color: string) =>
+  matrizTallas.value.reduce((s, t) => s + valorCelda(color, t), 0)
+const totalColumnaMatriz = (talla: string) =>
+  matrizColores.value.reduce((s, c) => s + valorCelda(c, talla), 0)
+const totalMatriz = computed(() =>
+  matrizColores.value.reduce((s, c) => s + totalFilaMatriz(c), 0),
+)
+
+/** La casilla más alta, para pintar las demás en proporción. */
+const maxCelda = computed(() => {
+  let max = 0
+  for (const c of matrizColores.value) {
+    for (const t of matrizTallas.value) max = Math.max(max, valorCelda(c, t))
+  }
+  return max || 1
+})
+
+/** Sombreado: cuanto más prendas tiene la casilla, más fuerte se ve. */
+const fondoCelda = (valor: number) => {
+  if (valor <= 0) return {}
+  const fuerza = 0.10 + (valor / maxCelda.value) * 0.55
+  const tono = repVista.value === 'recibidas' ? '16, 185, 129' : repVista.value === 'pendientes' ? '245, 158, 11' : '139, 92, 246'
+  return { backgroundColor: `rgba(${tono}, ${fuerza.toFixed(2)})` }
+}
 
 const cargarReporte = async () => {
   cargandoReporte.value = true
@@ -364,6 +495,7 @@ const cargarReporte = async () => {
       params: {
         ...(repDesde.value ? { desde: repDesde.value } : {}),
         ...(repHasta.value ? { hasta: repHasta.value } : {}),
+        ...(repProductoId.value ? { productoId: Number(repProductoId.value) } : {}),
       },
     })
     reporte.value = data
@@ -386,6 +518,16 @@ const exportarReporte = () => {
     ['Prendas recibidas', reporte.value.totales.prendasRecibidas],
     ['Prendas por kilo', reporte.value.totales.rendimientoPrendasPorKilo],
     ['Costo de tela', reporte.value.totales.costoTela],
+    [],
+    [],
+    [`MATRIZ COLOR x TALLA · ${ETIQUETA_VISTA[repVista.value].toUpperCase()}`],
+    ['COLOR', ...matrizTallas.value, 'TOTAL'],
+    ...matrizColores.value.map((c) => [
+      c,
+      ...matrizTallas.value.map((t) => valorCelda(c, t)),
+      totalFilaMatriz(c),
+    ]),
+    ['TOTAL', ...matrizTallas.value.map((t) => totalColumnaMatriz(t)), totalMatriz.value],
     [],
     ['CÓDIGO', 'FECHA', 'PRENDA', 'KILOS', 'CORTADAS', 'RECIBIDAS', 'ESTADO', 'CORTADOR'],
     ...reporte.value.cortes.map((c: any) => [
@@ -996,6 +1138,13 @@ watch(pestania, (p) => {
           <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-1">Hasta</label>
           <input v-model="repHasta" type="date" class="border-2 border-slate-200 rounded-xl px-4 h-12 font-bold text-slate-700 focus:border-emerald-500 outline-none" />
         </div>
+        <div>
+          <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-1">Prenda</label>
+          <select v-model="repProductoId" class="border-2 border-slate-200 rounded-xl px-4 h-12 font-bold text-slate-700 focus:border-emerald-500 outline-none bg-white">
+            <option value="">Toda la ropa</option>
+            <option v-for="p in productos" :key="p.id" :value="p.id">{{ p.nombre }}</option>
+          </select>
+        </div>
         <button @click="cargarReporte" class="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-7 h-12 rounded-xl shadow active:scale-95 transition-transform">
           🔎 Ver reporte
         </button>
@@ -1078,6 +1227,85 @@ watch(pestania, (p) => {
           </div>
         </div>
 
+        <!-- ==============================================================
+             MATRIZ COLOR × TALLA
+             Tallas arriba, colores a la izquierda: el mismo formato del corte
+             y de la recepción, para que el reporte se lea igual que se trabaja.
+             ============================================================== -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <p class="font-black text-slate-700 uppercase text-xs tracking-wider">Matriz de la ropa · color × talla</p>
+              <p class="text-xs text-slate-500 font-medium mt-0.5">
+                {{ repProductoId ? 'Solo la prenda elegida' : 'Toda la ropa del periodo' }}
+              </p>
+            </div>
+            <!-- Qué número se mira en cada casilla -->
+            <div class="flex gap-1 bg-slate-100 p-1 rounded-xl">
+              <button
+                v-for="v in (['cortadas', 'recibidas', 'pendientes'] as const)" :key="v"
+                @click="repVista = v"
+                class="px-4 py-2 rounded-lg text-xs font-black transition-all"
+                :class="repVista === v ? 'bg-white text-slate-800 shadow' : 'text-slate-500 hover:text-slate-700'"
+              >{{ ETIQUETA_VISTA[v] }}</button>
+            </div>
+          </div>
+
+          <p v-if="matrizColores.length === 0" class="text-center py-10 text-slate-400 font-bold">
+            Todavía no hay cortes en este periodo.
+          </p>
+
+          <div v-else class="overflow-x-auto rounded-2xl border-2 border-slate-200">
+            <table class="w-full text-sm border-collapse">
+              <thead>
+                <tr class="bg-slate-100">
+                  <th class="text-left px-4 py-3 text-xs uppercase tracking-wider text-slate-600 font-black sticky left-0 bg-slate-100 z-10">
+                    Color \ Talla
+                  </th>
+                  <th v-for="t in matrizTallas" :key="t" class="px-2 py-3 text-center min-w-[72px]">
+                    <span class="inline-block bg-violet-600 text-white font-black text-sm px-3 py-1 rounded-lg">{{ t }}</span>
+                  </th>
+                  <th class="px-3 py-3 text-center text-xs uppercase tracking-wider text-slate-600 font-black bg-slate-200">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="c in matrizColores" :key="c" class="border-t-2 border-slate-100">
+                  <td class="px-4 py-3 sticky left-0 bg-white z-10 border-r-2 border-slate-100">
+                    <span class="flex items-center gap-2 font-black text-slate-800 whitespace-nowrap">
+                      <span class="w-5 h-5 rounded-md border-2 border-slate-300 shrink-0" :style="{ backgroundColor: hexDeColor(c) }"></span>
+                      {{ c }}
+                    </span>
+                  </td>
+                  <td
+                    v-for="t in matrizTallas" :key="t"
+                    class="px-2 py-3 text-center text-lg font-black"
+                    :class="valorCelda(c, t) > 0 ? 'text-slate-800' : 'text-slate-200'"
+                    :style="fondoCelda(valorCelda(c, t))"
+                  >{{ valorCelda(c, t) || '·' }}</td>
+                  <td class="px-3 py-3 text-center bg-slate-50 border-l-2 border-slate-100">
+                    <span class="text-xl font-black text-slate-800">{{ totalFilaMatriz(c) }}</span>
+                  </td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr class="bg-slate-100 border-t-2 border-slate-200">
+                  <td class="px-4 py-3 font-black text-slate-700 uppercase text-xs tracking-wider sticky left-0 bg-slate-100 z-10">Total</td>
+                  <td v-for="t in matrizTallas" :key="t" class="px-2 py-3 text-center text-lg font-black text-violet-700">
+                    {{ totalColumnaMatriz(t) }}
+                  </td>
+                  <td class="px-3 py-3 text-center bg-slate-200">
+                    <span class="text-2xl font-black text-slate-800">{{ totalMatriz }}</span>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <p v-if="matrizColores.length" class="text-[11px] text-slate-500 font-bold mt-2">
+            Las casillas con más prendas se ven más fuertes. El CSV se baja con esta misma matriz.
+          </p>
+        </div>
+
         <!-- Por talla y por color -->
         <div class="grid md:grid-cols-2 gap-4">
           <div class="bg-white rounded-2xl p-5 shadow-sm">
@@ -1149,44 +1377,136 @@ watch(pestania, (p) => {
             </select>
           </div>
 
-          <div class="overflow-x-auto rounded-2xl border-2 border-slate-200">
-            <table class="w-full text-sm">
-              <thead class="bg-slate-100 text-xs uppercase tracking-wider text-slate-600 font-black">
-                <tr>
-                  <th class="text-left px-4 py-3">Color</th>
-                  <th class="px-3 py-3 text-center">Talla</th>
-                  <th class="px-3 py-3 text-center">Cortadas</th>
-                  <th class="px-3 py-3 text-center">Ya recibidas</th>
-                  <th class="px-3 py-3 text-center">Falta</th>
-                  <th class="px-3 py-3 text-center w-32">Llegaron ahora</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="d in modalRecibir.detalles" :key="d.id" class="border-t border-slate-100">
-                  <td class="px-4 py-3">
-                    <span class="flex items-center gap-2 font-bold text-slate-800">
-                      <span class="w-4 h-4 rounded border border-slate-300 shrink-0" :style="{ backgroundColor: hexDeColor(d.color) }"></span>
-                      {{ d.color }}
-                    </span>
-                  </td>
-                  <td class="px-3 py-3 text-center font-black text-slate-700">{{ d.talla }}</td>
-                  <td class="px-3 py-3 text-center font-semibold text-slate-600">{{ d.cantidad }}</td>
-                  <td class="px-3 py-3 text-center font-semibold text-emerald-600">{{ d.cantidadRecibida }}</td>
-                  <td class="px-3 py-3 text-center font-black" :class="d.cantidad - d.cantidadRecibida > 0 ? 'text-amber-600' : 'text-slate-300'">
-                    {{ d.cantidad - d.cantidadRecibida }}
-                  </td>
-                  <td class="px-3 py-2">
-                    <input
-                      v-model.number="recibidos[clave(d.color, d.talla)]"
-                      type="number" min="0" :max="d.cantidad - d.cantidadRecibida" placeholder="0"
-                      :disabled="d.cantidad - d.cantidadRecibida <= 0"
-                      class="w-full border-2 border-slate-200 rounded-xl h-12 text-center text-lg font-black text-slate-800
-                             focus:border-emerald-500 focus:bg-emerald-50 outline-none disabled:bg-slate-50 disabled:text-slate-300"
-                    />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <!-- ==============================================================
+               MATRIZ DE RECEPCIÓN · tallas arriba, colores a la izquierda
+               Mismo formato con el que se cortó en el paso 2.
+               ============================================================== -->
+          <div>
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <p class="text-xs font-black uppercase tracking-wider text-slate-600">
+                ¿Cuántas prendas llegaron de cada color y talla?
+              </p>
+              <div class="flex gap-2">
+                <button @click="llenarConLoQueFalta" class="text-[11px] font-black text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-200 px-3 py-1.5 rounded-xl">
+                  ✓ Llegó todo lo que falta
+                </button>
+                <button @click="vaciarRecepcion" class="text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl">
+                  Vaciar
+                </button>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-2xl border-2 border-slate-200">
+              <table class="w-full text-sm border-collapse">
+                <thead>
+                  <tr class="bg-slate-100">
+                    <th class="text-left px-4 py-3 text-xs uppercase tracking-wider text-slate-600 font-black sticky left-0 bg-slate-100 z-10">
+                      Color \ Talla
+                    </th>
+                    <th v-for="t in tallasRecepcion" :key="t" class="px-2 py-3 text-center min-w-[92px]">
+                      <span class="inline-block bg-violet-600 text-white font-black text-sm px-3 py-1 rounded-lg">{{ t }}</span>
+                    </th>
+                    <th class="px-3 py-3 text-center text-xs uppercase tracking-wider text-slate-600 font-black bg-slate-200">
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="c in coloresRecepcion" :key="c" class="border-t-2 border-slate-100">
+                    <!-- El color, fijo a la izquierda aunque se desplace la tabla -->
+                    <td class="px-4 py-2 sticky left-0 bg-white z-10 border-r-2 border-slate-100">
+                      <span class="flex items-center gap-2 font-black text-slate-800 whitespace-nowrap">
+                        <span class="w-5 h-5 rounded-md border-2 border-slate-300 shrink-0" :style="{ backgroundColor: hexDeColor(c) }"></span>
+                        {{ c }}
+                      </span>
+                    </td>
+
+                    <td v-for="t in tallasRecepcion" :key="t" class="px-2 py-2 align-top">
+                      <!-- Casilla que SÍ se cortó y todavía falta: se puede llenar -->
+                      <template v-if="detalleDe(c, t) && faltaDe(c, t) > 0">
+                        <input
+                          v-model.number="recibidos[clave(c, t)]"
+                          type="number" min="0" :max="faltaDe(c, t)" placeholder="0"
+                          class="w-full border-2 rounded-xl h-12 text-center text-lg font-black outline-none"
+                          :class="enCasilla(c, t) > faltaDe(c, t)
+                            ? 'border-rose-400 bg-rose-50 text-rose-700'
+                            : 'border-slate-200 text-slate-800 focus:border-emerald-500 focus:bg-emerald-50'"
+                        />
+                        <p class="text-[10px] font-bold text-center mt-1"
+                           :class="enCasilla(c, t) > faltaDe(c, t) ? 'text-rose-600' : 'text-amber-600'">
+                          <template v-if="enCasilla(c, t) > faltaDe(c, t)">solo faltan {{ faltaDe(c, t) }}</template>
+                          <template v-else>faltan {{ faltaDe(c, t) }} de {{ detalleDe(c, t).cantidad }}</template>
+                        </p>
+                      </template>
+
+                      <!-- Casilla cortada y ya completa -->
+                      <template v-else-if="detalleDe(c, t)">
+                        <div class="h-12 rounded-xl bg-emerald-50 border-2 border-emerald-200 flex items-center justify-center">
+                          <span class="text-emerald-600 font-black">✓ {{ detalleDe(c, t).cantidadRecibida }}</span>
+                        </div>
+                        <p class="text-[10px] font-bold text-center mt-1 text-emerald-600">completo</p>
+                      </template>
+
+                      <!-- Casilla que no se cortó. Se puede llenar igual: si el
+                           taller mandó una talla que no estaba, el almacén manda. -->
+                      <template v-else>
+                        <input
+                          v-model.number="recibidos[clave(c, t)]"
+                          type="number" min="0" placeholder="—"
+                          class="w-full border-2 border-dashed rounded-xl h-12 text-center text-lg font-black outline-none"
+                          :class="enCasilla(c, t) > 0
+                            ? 'border-amber-400 bg-amber-50 text-amber-800'
+                            : 'border-slate-200 text-slate-400 focus:border-amber-400'"
+                        />
+                        <p class="text-[10px] font-bold text-center mt-1"
+                           :class="enCasilla(c, t) > 0 ? 'text-amber-600' : 'text-slate-300'">
+                          no se cortó
+                        </p>
+                      </template>
+                    </td>
+
+                    <td class="px-3 py-2 text-center bg-slate-50 border-l-2 border-slate-100">
+                      <span class="text-2xl font-black" :class="totalFilaRecepcion(c) > 0 ? 'text-emerald-600' : 'text-slate-300'">
+                        {{ totalFilaRecepcion(c) }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr class="bg-slate-100 border-t-2 border-slate-200">
+                    <td class="px-4 py-3 font-black text-slate-700 uppercase text-xs tracking-wider sticky left-0 bg-slate-100 z-10">
+                      Total
+                    </td>
+                    <td v-for="t in tallasRecepcion" :key="t" class="px-2 py-3 text-center">
+                      <span class="text-xl font-black" :class="totalColumnaRecepcion(t) > 0 ? 'text-violet-700' : 'text-slate-300'">
+                        {{ totalColumnaRecepcion(t) }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-3 text-center bg-slate-200">
+                      <span class="text-2xl font-black text-slate-800">{{ totalARecibir }}</span>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <!-- Avisos de la matriz -->
+            <div v-if="casillasExcedidas.length" class="mt-3 bg-rose-50 border-2 border-rose-200 rounded-2xl p-4">
+              <p class="text-sm font-black text-rose-800 mb-1">⚠️ Hay casillas con más prendas de las que faltan</p>
+              <p v-for="e in casillasExcedidas" :key="e.color + e.talla" class="text-xs font-bold text-rose-700">
+                {{ e.color }} · talla {{ e.talla }}: pusiste {{ e.puesto }} y solo faltan {{ e.falta }}.
+              </p>
+            </div>
+
+            <div v-else-if="casillasExtra.length" class="mt-3 bg-amber-50 border-2 border-amber-200 rounded-2xl p-4">
+              <p class="text-sm font-black text-amber-900 mb-1">📌 Llegaron prendas que no estaban en el corte</p>
+              <p v-for="e in casillasExtra" :key="e.color + e.talla" class="text-xs font-bold text-amber-800">
+                {{ e.color }} · talla {{ e.talla }}: {{ e.cantidad }} prendas.
+              </p>
+              <p class="text-[11px] text-amber-700 mt-1">
+                Se aceptan: entran al almacén igual, porque lo que hay físicamente es lo que manda.
+              </p>
+            </div>
           </div>
 
           <div class="bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 text-center">
@@ -1196,14 +1516,20 @@ watch(pestania, (p) => {
           </div>
         </div>
 
-        <div class="p-6 border-t-2 border-slate-100 flex flex-wrap gap-3">
-          <button
-            @click="confirmarRecepcion" :disabled="guardando || totalARecibir <= 0 || !bodegaDestinoId"
-            class="flex-1 min-w-[240px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700
-                   disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed
-                   text-white font-black text-lg py-5 rounded-2xl shadow-lg active:scale-95 transition-all"
-          >{{ guardando ? 'Registrando...' : `✅ Confirmar ingreso de ${totalARecibir} prendas` }}</button>
-          <button @click="modalRecibir = null" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-7 py-5 rounded-2xl">Cancelar</button>
+        <div class="p-6 border-t-2 border-slate-100 space-y-3">
+          <!-- Si el botón está apagado, aquí se dice exactamente por qué -->
+          <p v-if="razonBloqueoRecepcion" class="text-sm font-bold text-amber-700 bg-amber-50 border-2 border-amber-200 rounded-xl px-4 py-3">
+            ⚠️ {{ razonBloqueoRecepcion }}
+          </p>
+          <div class="flex flex-wrap gap-3">
+            <button
+              @click="confirmarRecepcion" :disabled="guardando || !!razonBloqueoRecepcion"
+              class="flex-1 min-w-[240px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700
+                     disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed
+                     text-white font-black text-lg py-5 rounded-2xl shadow-lg active:scale-95 transition-all"
+            >{{ guardando ? 'Registrando...' : `✅ Confirmar ingreso de ${totalARecibir} prendas` }}</button>
+            <button @click="modalRecibir = null" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-7 py-5 rounded-2xl">Cancelar</button>
+          </div>
         </div>
       </div>
     </div>
