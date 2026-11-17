@@ -87,6 +87,7 @@ const {
   cambiarListaLinea,
   limpiarBorrador,
   avisos,
+  avisar,
   descartarAviso,
   construirDetalles,
 } = useVentas(inventarioConSKU, () => {})
@@ -332,6 +333,12 @@ const cobrar = async () => {
     }
 
     ventaRealizada.value = resultado.data
+
+    // Prendas que se vendieron por encima de lo que registraba el sistema. La
+    // venta YA quedó registrada: esto solo avisa que a ese color/talla le falta
+    // un ingreso, para arreglarlo en el conteo del almacén.
+    ;(resultado.data?.avisosStock || []).forEach((texto: string) => avisar(texto))
+
     await cargarDatos()
     modalTicket.value = true
   } finally {

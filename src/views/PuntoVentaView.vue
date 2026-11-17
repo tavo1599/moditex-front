@@ -83,6 +83,7 @@ const {
   borradorRecuperado,
   limpiarBorrador,
   avisos,
+  avisar,
   descartarAviso,
   construirDetalles,
 } = useVentas(inventarioConSKU, () => {})
@@ -280,6 +281,11 @@ const enviarVentaBackend = async () => {
   }
 
   ventaRealizada.value = resultado.data
+
+  // El servidor acepta vender aunque el sistema marque 0, y devuelve la lista de
+  // lo que no cuadraba. Se muestra como aviso: la venta ya está registrada y lo
+  // que falta es un ingreso al inventario.
+  ;(resultado.data?.avisosStock || []).forEach((texto: string) => avisar(texto))
 
   // 🔄 Recargamos el inventario SIEMPRE apenas se registra la venta, para que la
   // siguiente venta ya vea el stock actualizado.

@@ -552,7 +552,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     clienteNombre, tipoVenta, metodoEntrega, destinoEnvio, modalTicket, ventaRealizada,
     totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual,
     cambiarCantidad, borradorRecuperado, limpiarBorrador,
-    avisos, descartarAviso, construirDetalles,
+    avisos, avisar, descartarAviso, construirDetalles,
     // Precio y lista por línea + talla pendiente de definir
     cambiarPrecio, cambiarListaLinea, listaDeLinea, esSinTalla, stockDeTalla
   };
