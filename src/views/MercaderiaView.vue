@@ -24,9 +24,12 @@ import JsBarcode from 'jsbarcode'
 type Pestania = 'comprar' | 'catalogo' | 'historial'
 const pestania = ref<Pestania>('comprar')
 
+// ---------------------------------------------------------------------------  
 // ---------------------------------------------------------------------------
 // DATOS BASE
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+
 const proveedores = ref<any[]>([])
 const bodegas = ref<any[]>([])
 const catalogo = ref<any[]>([])

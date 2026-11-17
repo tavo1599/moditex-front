@@ -308,16 +308,17 @@ onUnmounted(() => {
                     <option v-for="p in productos" :key="p.id" :value="p.id">{{ p.nombre }}</option>
                   </select>
                 </div>
+        
                 <div class="grid grid-cols-2 gap-4">
                   <div>
-  <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Color</label>
-  <select v-model="formPrenda.color" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl font-bold text-white outline-none text-sm cursor-pointer">
-    <option value="" disabled>Seleccione color...</option>
-    <option v-for="c in colores" :key="c.id" :value="c.nombre">
-      {{ c.nombre }}
-    </option>
-  </select>
-</div>
+                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Color</label>
+                    <select v-model="formPrenda.color" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl font-bold text-white outline-none text-sm cursor-pointer">
+                      <option value="" disabled>Seleccione color...</option>
+                      <option v-for="c in colores" :key="c.id" :value="c.nombre">
+                        {{ c.nombre }}
+                      </option>
+                    </select>
+                  </div>
                   <div>
                     <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Talla</label>
                     <input v-model="formPrenda.talla" type="text" placeholder="Ej: M" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl font-bold text-white outline-none text-center uppercase" />
