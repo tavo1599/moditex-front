@@ -500,7 +500,12 @@ onMounted(() => {
                     <div class="flex flex-wrap gap-1.5 mt-1.5">
                       <span
                         class="text-[12px] md:text-[11px] font-black bg-blue-50 text-blue-700 px-2.5 py-1 md:py-0.5 rounded border border-blue-100"
-                        >Talla {{ item.talla }}</span
+                        :title="
+                          item.talla
+                            ? ''
+                            : 'Se cargó sin elegir talla: al cobrar sale de las tallas con más stock.'
+                        "
+                        >{{ item.talla ? `Talla ${item.talla}` : '📏 Talla surtida' }}</span
                       >
                       <span
                         v-if="item.stockForzado"

@@ -124,10 +124,19 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
   // Cada prenda tiene precio minorista y mayorista. `tipoVenta` decide cuál se usa.
   // Si la lista elegida está en cero (todavía no la configuraron) caemos a la otra
   // antes que meter un 0 al carrito y vender regalado por descuido.
+  /**
+   * La lista de ESTA línea manda sobre la de la venta. Al mostrador entra un
+   * mayorista que se lleva una prenda al menudeo: esa sola línea se pasa a
+   * minorista con un clic, sin tocar el resto del carrito (`cambiarListaLinea`).
+   * Si la línea no dice nada, vale la lista de la venta.
+   */
+  const listaDeLinea = (linea: any): string =>
+    linea?.lista === 'MAYORISTA' || linea?.lista === 'MINORISTA' ? linea.lista : tipoVenta.value;
+
   const precioDeLista = (linea: any): number => {
     const mayorista = Number(linea?.precioMayorista) || 0;
     const minorista = Number(linea?.precioMinorista) || 0;
-    const elegido = tipoVenta.value === 'MAYORISTA' ? mayorista : minorista;
+    const elegido = listaDeLinea(linea) === 'MAYORISTA' ? mayorista : minorista;
     return elegido || minorista || mayorista || 0;
   };
 
@@ -143,42 +152,73 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
      con el conteo físico de inventario.
      ────────────────────────────────────────────────────────────── */
 
+  /* ──────────────────────────────────────────────────────────────
+     📏 LA TALLA TAMBIÉN PUEDE QUEDAR PARA DESPUÉS
+
+     Una línea SIN talla ('') es la venta hecha de frente, sin preguntar nada:
+     se toca la prenda y entra al carrito. El reparto entre tallas lo resuelve
+     el sistema al cobrar, igual que ya hacía con el color, empezando por las
+     que más stock tienen. Lo exacto se arregla en el conteo físico.
+     ────────────────────────────────────────────────────────────── */
+  const normalizarTalla = (talla: any): string =>
+    talla === null || talla === undefined ? '' : String(talla).trim();
+
+  /** true si esa línea se vendió sin elegir talla. */
+  const esSinTalla = (linea: any): boolean => normalizarTalla(linea?.talla) === '';
+
   /** Identidad de una línea de carrito: la caja ya no separa por color. */
-  const claveLinea = (productoId: any, talla: any) => `${Number(productoId)}-${String(talla)}`;
+  const claveLinea = (productoId: any, talla: any) =>
+    `${Number(productoId)}-${normalizarTalla(talla) || '*'}`;
 
   /** La clave de una línea, tolerando borradores viejos que no la traían. */
   const claveDe = (linea: any) => linea.clave || claveLinea(linea.productoId, linea.talla);
 
-  /** Todas las variantes de color de esa prenda+talla en la bodega de la caja. */
-  const variantesDeTalla = (productoId: any, talla: any): any[] =>
-    inventarioConSKURef.value.filter(
+  /**
+   * Variantes reales que puede surtir esa línea en la bodega de la caja:
+   * los colores de esa talla, o TODAS las tallas y colores de la prenda si la
+   * línea se vendió sin talla.
+   */
+  const variantesDeTalla = (productoId: any, talla: any): any[] => {
+    const sinTalla = normalizarTalla(talla) === '';
+    return inventarioConSKURef.value.filter(
       (i: any) =>
         Number(i.bodegaId) === Number(bodegaSeleccionada.value) &&
         Number(i.productoId || i.producto?.id) === Number(productoId) &&
-        String(i.talla) === String(talla)
+        (sinTalla || String(i.talla) === String(talla))
     );
+  };
 
-  /** Stock de la talla sumando todos sus colores: es el tope que ve el vendedor. */
+  /**
+   * Tope que ve el vendedor: el stock de la talla sumando sus colores, o el de
+   * la prenda completa cuando la línea todavía no tiene talla.
+   */
   const stockDeTalla = (productoId: any, talla: any): number =>
     variantesDeTalla(productoId, talla).reduce((s, v) => s + (Number(v.stock) || 0), 0);
 
   /** Arma una línea de carrito nueva ya con las dos listas de precio a bordo. */
   const nuevaLinea = (datos: {
     sku: string; productoId: number; nombre: string; colorPreferido?: string;
-    talla: string; stockMaximo: number; producto?: any;
+    talla?: string; stockMaximo: number; producto?: any;
   }) => {
+    const talla = normalizarTalla(datos.talla);
     const linea: any = {
-      clave: claveLinea(datos.productoId, datos.talla),
+      clave: claveLinea(datos.productoId, talla),
       sku: datos.sku,
       productoId: datos.productoId,
       nombre: datos.nombre,
       // Solo se llena cuando la línea nació de un escaneo: ese color es dato
       // exacto (viene en la etiqueta) y se respeta antes que estimar.
       colorPreferido: datos.colorPreferido || '',
-      talla: datos.talla,
+      // Vacía = sin elegir todavía; el sistema reparte las tallas al cobrar.
+      talla,
       cantidad: 1,
       stockMaximo: datos.stockMaximo,
       stockForzado: datos.stockMaximo <= 0,
+      // Lista de precio de esta línea. Nace con la de la venta y se cambia sola.
+      lista: tipoVenta.value,
+      // true cuando el precio se escribió a mano: la pantalla lo muestra para
+      // que nadie crea que ese número salió de una lista.
+      precioEditado: false,
       // Se guardan en la línea para poder recalcular al cambiar de lista sin
       // volver a consultar el inventario (y para que sobrevivan al borrador).
       precioMinorista: Number(datos.producto?.precioMinorista) || 0,
@@ -186,8 +226,9 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     };
     linea.precioUnitario = precioDeLista(linea);
 
+    const comoSeLlama = talla ? `${datos.nombre} (${talla})` : datos.nombre;
     if (linea.stockForzado) {
-      avisar(`${datos.nombre} (${datos.talla}) quedó sin stock en el sistema. Revisar inventario.`);
+      avisar(`${comoSeLlama} quedó sin stock en el sistema. Revisar inventario.`);
     }
     if (linea.precioUnitario <= 0) {
       avisar(`${datos.nombre} no tiene precio configurado. Escríbelo a mano en el carrito.`);
@@ -196,12 +237,15 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
   };
 
   /**
-   * 🎨 REPARTO DE COLOR AL COBRAR
+   * 🎨📏 REPARTO DE COLOR (Y DE TALLA) AL COBRAR
    *
-   * La caja vende por talla, pero el almacén descuenta por color: alguien tiene
-   * que decidir de qué color sale cada unidad. Lo decide el sistema, empezando
-   * por el color con MÁS stock, así ningún color queda en negativo. Si vendes 5
-   * de talla M y hay Negro 3 / Rojo 4, salen 4 Rojo + 1 Negro.
+   * La caja vende rápido, pero el almacén descuenta por color y talla: alguien
+   * tiene que decidir de qué variante sale cada unidad. Lo decide el sistema,
+   * empezando por la que tiene MÁS stock, así ninguna queda en negativo. Si
+   * vendes 5 de talla M y hay Negro 3 / Rojo 4, salen 4 Rojo + 1 Negro.
+   *
+   * Si la línea entró sin talla (venta de frente, sin preguntar), el reparto
+   * mira todas las tallas de la prenda con el mismo criterio.
    *
    * El color escaneado manda sobre la estimación: la etiqueta trae el color real.
    */
@@ -216,11 +260,11 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
       // al vender más de lo que registra el sistema, el sobrante cae sobre un
       // color que ya se había servido y el backend recibiría la misma variante
       // dos veces.
-      const agregar = (color: string, cantidad: number) => {
+      const agregar = (color: string, talla: string, cantidad: number) => {
         const yaEsta = detalles.find(
           (d) => d.productoId === Number(linea.productoId) &&
                  d.color === String(color) &&
-                 d.talla === String(linea.talla)
+                 d.talla === String(talla)
         );
         if (yaEsta) {
           yaEsta.cantidad += Number(cantidad);
@@ -229,18 +273,23 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
         detalles.push({
           productoId: Number(linea.productoId),
           color: String(color),
-          talla: String(linea.talla),
+          talla: String(talla),
           cantidad: Number(cantidad),
           precioUnitario: Number(linea.precioUnitario)
         });
       };
 
       const variantes = variantesDeTalla(linea.productoId, linea.talla)
-        .map((v: any) => ({ color: String(v.color), stock: Number(v.stock) || 0 }))
+        .map((v: any) => ({
+          color: String(v.color),
+          talla: String(v.talla),
+          stock: Number(v.stock) || 0
+        }))
         .sort((a, b) => {
           if (linea.colorPreferido) {
-            if (a.color === linea.colorPreferido) return -1;
-            if (b.color === linea.colorPreferido) return 1;
+            const aEsEl = a.color === linea.colorPreferido;
+            const bEsEl = b.color === linea.colorPreferido;
+            if (aEsEl !== bEsEl) return aEsEl ? -1 : 1;
           }
           return b.stock - a.stock;
         });
@@ -248,26 +297,37 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
       variantes.forEach((v) => {
         if (porRepartir <= 0 || v.stock <= 0) return;
         const toma = Math.min(v.stock, porRepartir);
-        agregar(v.color, toma);
+        agregar(v.color, v.talla, toma);
         porRepartir -= toma;
       });
 
       // Se vendió más de lo que el sistema registra (pasa seguido: el físico va
-      // adelante del sistema). El sobrante se carga al color escaneado, o al que
-      // más stock tenía, y el aviso de "revisar inventario" ya salió al agregarlo.
+      // adelante del sistema). El sobrante se carga a la variante escaneada, o a
+      // la que más stock tenía, y el aviso de "revisar inventario" ya salió al
+      // agregarlo al carrito.
       if (porRepartir > 0) {
-        agregar(linea.colorPreferido || variantes[0]?.color || '', porRepartir);
+        const respaldo = variantes[0];
+        agregar(
+          linea.colorPreferido || respaldo?.color || '',
+          normalizarTalla(linea.talla) || respaldo?.talla || '',
+          porRepartir
+        );
       }
     });
 
     return detalles;
   };
 
-  // Al cambiar de lista se reaplican los precios a todo el carrito. Es una acción
-  // deliberada del vendedor, así que pisa también los precios editados a mano.
+  // Cambiar la lista de la VENTA es un "ponle esta lista a todo": reaplica los
+  // precios a cada línea, incluidas las que estaban en la otra lista y las que
+  // tenían precio escrito a mano. Para una sola prenda está `cambiarListaLinea`.
   watch(tipoVenta, (lista) => {
     if (carrito.value.length === 0) return;
-    carrito.value.forEach((linea) => { linea.precioUnitario = precioDeLista(linea); });
+    carrito.value.forEach((linea) => {
+      linea.lista = lista;
+      linea.precioEditado = false;
+      linea.precioUnitario = precioDeLista(linea);
+    });
     avisar(`Precios actualizados a la lista ${lista === 'MAYORISTA' ? 'MAYORISTA' : 'MINORISTA'}.`);
     emitirSincronizacionCb(carrito.value);
   });
@@ -296,6 +356,49 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
       );
     }
 
+    emitirSincronizacionCb(carrito.value);
+  };
+
+  /**
+   * 💵 PRECIO ESCRITO A MANO
+   *
+   * El regateo del mostrador no entra en ninguna lista. Se guarda en la línea y
+   * se marca como editado para que en pantalla se vea que ese número lo puso una
+   * persona. Ojo: cambiar la lista de toda la venta lo vuelve a pisar.
+   */
+  const cambiarPrecio = (item: any, valor: number | string) => {
+    const precio = Math.round((Number(valor) || 0) * 100) / 100;
+    item.precioUnitario = precio > 0 ? precio : 0;
+    item.precioEditado = true;
+    if (item.precioUnitario <= 0) {
+      avisar(`${item.nombre} quedó en S/ 0.00. Revisa el precio antes de cobrar.`);
+    }
+    emitirSincronizacionCb(carrito.value);
+  };
+
+  /**
+   * 🔁 UNA SOLA PRENDA A LA OTRA LISTA, DE UN CLIC
+   *
+   * Caso real: la venta está en MAYORISTA, el cliente se lleva seis prendas por
+   * mayor y una sola al menudeo. Esa línea se cambia aquí y las demás se quedan
+   * como están. Sin destino explícito, alterna entre las dos listas.
+   */
+  const cambiarListaLinea = (item: any, lista?: 'MINORISTA' | 'MAYORISTA') => {
+    const destino = lista || (listaDeLinea(item) === 'MAYORISTA' ? 'MINORISTA' : 'MAYORISTA');
+    item.lista = destino;
+    item.precioEditado = false;
+    item.precioUnitario = precioDeLista(item);
+
+    // La lista existe pero la prenda no tiene ese precio configurado: se queda
+    // con el otro (precioDeLista nunca deja un 0) y se avisa.
+    const precioPedido =
+      destino === 'MAYORISTA' ? Number(item.precioMayorista) || 0 : Number(item.precioMinorista) || 0;
+    if (precioPedido <= 0) {
+      avisar(
+        `${item.nombre} no tiene precio ${destino === 'MAYORISTA' ? 'por mayor' : 'normal'} ` +
+          `configurado. Escríbelo a mano en el carrito.`
+      );
+    }
     emitirSincronizacionCb(carrito.value);
   };
 
@@ -402,14 +505,17 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
    * Acepta tanto una talla ya agrupada (lo que emite la grilla) como una fila
    * suelta del inventario: en ambos casos solo se leen prenda y talla, porque el
    * color no se decide en la caja.
+   *
+   * Y acepta también una prenda SIN talla: así es la venta de frente de la caja
+   * rápida, un toque y al carrito. La talla la reparte el cobro.
    */
   const agregarPrendaManual = (prenda: any) => {
     if (!bodegaSeleccionada.value) return alert('Selecciona una bodega primero.');
     if (!prenda) return;
 
     const productoId = Number(prenda.productoId || prenda.producto?.id);
-    const nombre = prenda.producto?.nombre || 'Producto';
-    const talla = prenda.talla;
+    const nombre = prenda.producto?.nombre || prenda.nombre || 'Producto';
+    const talla = normalizarTalla(prenda.talla);
     const stockMaximo = stockDeTalla(productoId, talla);
 
     const clave = claveLinea(productoId, talla);
@@ -421,7 +527,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     } else {
       carrito.value.unshift(
         nuevaLinea({
-          sku: `PRD${productoId}-${talla}`,
+          sku: `PRD${productoId}-${talla || 'SURTIDO'}`,
           productoId,
           nombre,
           talla,
@@ -446,6 +552,8 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     clienteNombre, tipoVenta, metodoEntrega, destinoEnvio, modalTicket, ventaRealizada,
     totalPagar, saldoPendiente, procesarEscaneo, quitarDelCarrito, agregarPrendaManual,
     cambiarCantidad, borradorRecuperado, limpiarBorrador,
-    avisos, descartarAviso, construirDetalles
+    avisos, descartarAviso, construirDetalles,
+    // Precio y lista por línea + talla pendiente de definir
+    cambiarPrecio, cambiarListaLinea, listaDeLinea, esSinTalla, stockDeTalla
   };
 }

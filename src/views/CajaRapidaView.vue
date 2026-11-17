@@ -9,13 +9,17 @@ import { coincideConPrenda } from '../utils/sku'
 
 import ModalTicketVenta from '../components/ModalTicketVenta.vue'
 import PanelVentasPendientes from '../components/ventas/PanelVentasPendientes.vue'
+import LineaCarritoRapida from '../components/ventas/LineaCarritoRapida.vue'
 
 /**
  * ⚡ CAJA RÁPIDA
  *
  * Punto de venta reducido a lo mínimo para cajeros: botones grandes, colores
- * fijos por prenda y dos toques por venta (prenda → talla). Sin sidebar, sin
- * pestañas, sin pistola obligatoria.
+ * fijos por prenda y UN toque por prenda. Ni el color ni la talla frenan la
+ * venta: se tocan y entran al carrito. El sistema reparte talla y color al
+ * cobrar, empezando por las variantes con más stock, y lo que no cuadre se
+ * arregla en el conteo físico del almacén. Sin sidebar, sin pestañas, sin
+ * pistola obligatoria.
  *
  * Comparte TODO el motor con la caja completa (useVentas + useColaVentas), así
  * que hereda el carrito persistente, la cola de ventas que no se pierden, los
@@ -79,6 +83,8 @@ const {
   quitarDelCarrito,
   agregarPrendaManual,
   cambiarCantidad,
+  cambiarPrecio,
+  cambiarListaLinea,
   limpiarBorrador,
   avisos,
   descartarAviso,
@@ -142,6 +148,9 @@ const prendas = computed(() => {
         id,
         nombre: item.producto?.nombre || 'Producto',
         precio: precioVisible(item.producto),
+        // Se guarda la prenda entera: de ahí salen los dos precios (normal y
+        // por mayor) que después se pueden cambiar línea por línea.
+        producto: item.producto,
         stock: 0,
       })
     }
@@ -175,7 +184,28 @@ const alPresionarEnter = async () => {
   enfocarEscaner()
 }
 
-/* ── Paso 2: elegir talla ──────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────
+   ⚡ UN TOQUE = VENDIDA
+
+   Preguntar la talla en el mostrador era lo último que frenaba la caja. Ahora
+   tocar la prenda la manda al carrito sin preguntar nada. La talla (y el color)
+   se reparten solos al cobrar entre las variantes con más stock, así ninguna
+   queda en negativo, y el conteo físico del almacén arregla el detalle.
+
+   Quien SÍ quiera marcar la talla tiene el botón 📏 de la esquina de cada
+   prenda: abre la pantalla de tallas de siempre.
+   ────────────────────────────────────────────────────────────── */
+const venderDirecto = (p: any) => {
+  agregarPrendaManual({ productoId: p.id, nombre: p.nombre, producto: p.producto })
+}
+
+/** Unidades de esa prenda que ya están en el carrito, de cualquier talla. */
+const enCarritoPrenda = (productoId: any) =>
+  carrito.value
+    .filter((c: any) => Number(c.productoId) === Number(productoId))
+    .reduce((s: number, c: any) => s + (Number(c.cantidad) || 0), 0)
+
+/* ── Opcional: elegir talla ────────────────────────────────── */
 const prendaAbierta = ref<any>(null)
 
 const tallasDePrenda = computed(() => {
@@ -412,25 +442,46 @@ onMounted(async () => {
           </div>
 
           <div v-else class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
-            <button
+            <!--
+              Toque en cualquier parte de la tarjeta = la prenda entra al carrito.
+              El botón 📏 de la esquina es para cuando sí se quiere marcar la talla.
+            -->
+            <div
               v-for="p in prendas"
               :key="p.id"
-              @click="abrirPrenda(p)"
+              @click="venderDirecto(p)"
+              @keyup.enter="venderDirecto(p)"
+              role="button"
+              tabindex="0"
               :class="colorDePrenda(p.id)"
-              class="text-white rounded-3xl p-4 min-h-[128px] flex flex-col justify-between text-left shadow-md transition-all active:scale-95"
+              class="relative text-white rounded-3xl p-4 min-h-[128px] flex flex-col justify-between text-left shadow-md transition-all active:scale-95 cursor-pointer"
             >
-              <span class="font-black text-base md:text-lg leading-tight line-clamp-3 drop-shadow-sm">
+              <span class="font-black text-base md:text-lg leading-tight line-clamp-3 drop-shadow-sm pr-16">
                 {{ p.nombre }}
               </span>
+
+              <button
+                @click.stop="abrirPrenda(p)"
+                class="absolute top-3 right-3 bg-black/30 hover:bg-black/50 rounded-xl px-2 py-1 text-[10px] font-black uppercase tracking-wider transition-colors"
+                title="Elegir la talla de esta prenda"
+              >📏 Talla</button>
+
               <span class="flex items-end justify-between gap-2 mt-2">
                 <span class="font-black text-xl md:text-2xl drop-shadow-sm">
                   {{ p.precio > 0 ? `S/ ${p.precio.toFixed(2)}` : 'S/ —' }}
                 </span>
-                <span class="bg-black/25 rounded-lg px-2 py-0.5 text-xs font-black shrink-0">
-                  {{ p.stock }}
+                <span class="flex items-center gap-1 shrink-0">
+                  <span
+                    v-if="enCarritoPrenda(p.id)"
+                    class="bg-white text-slate-900 rounded-lg px-2 py-0.5 text-xs font-black"
+                    title="Unidades de esta prenda en el carrito"
+                  >🛒 {{ enCarritoPrenda(p.id) }}</span>
+                  <span class="bg-black/25 rounded-lg px-2 py-0.5 text-xs font-black">
+                    {{ p.stock }}
+                  </span>
                 </span>
               </span>
-            </button>
+            </div>
           </div>
         </div>
       </div>
@@ -454,47 +505,16 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div
+          <LineaCarritoRapida
             v-for="(item, i) in carrito"
             :key="item.clave || item.sku"
-            class="bg-slate-50 border-2 border-slate-100 rounded-2xl p-3"
-          >
-            <div class="flex items-start justify-between gap-2 mb-2">
-              <div class="min-w-0">
-                <p class="font-black text-slate-800 leading-tight">{{ item.nombre }}</p>
-                <div class="flex items-center gap-1.5 mt-1">
-                  <span class="bg-slate-800 text-white text-xs font-black px-2 py-0.5 rounded-md">
-                    T. {{ item.talla }}
-                  </span>
-                  <span v-if="item.stockForzado" class="bg-amber-100 text-amber-700 text-[10px] font-black px-2 py-0.5 rounded-md">
-                    ⚠️ Revisar stock
-                  </span>
-                </div>
-              </div>
-              <button
-                @click="quitarDelCarrito(i)"
-                class="text-slate-300 hover:text-red-500 text-2xl leading-none font-black shrink-0 px-1"
-              >×</button>
-            </div>
-
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <button
-                  @click="cambiarCantidad(item, item.cantidad - 1)"
-                  :disabled="item.cantidad <= 1"
-                  class="w-11 h-11 rounded-xl bg-white border-2 border-slate-200 text-slate-700 font-black text-2xl leading-none flex items-center justify-center active:scale-90 disabled:opacity-30 transition-all"
-                >−</button>
-                <span class="w-10 text-center font-black text-2xl text-slate-900 tabular-nums">{{ item.cantidad }}</span>
-                <button
-                  @click="cambiarCantidad(item, item.cantidad + 1)"
-                  class="w-11 h-11 rounded-xl bg-white border-2 border-slate-200 text-slate-700 font-black text-2xl leading-none flex items-center justify-center active:scale-90 transition-all"
-                >+</button>
-              </div>
-              <span class="font-black text-lg text-slate-900 tabular-nums">
-                S/ {{ ((Number(item.precioUnitario) || 0) * item.cantidad).toFixed(2) }}
-              </span>
-            </div>
-          </div>
+            :item="item"
+            :listaVenta="tipoVenta"
+            @quitar="quitarDelCarrito(i)"
+            @cantidad="(n: number) => cambiarCantidad(item, n)"
+            @precio="(v: string) => cambiarPrecio(item, v)"
+            @lista="(l: 'MINORISTA' | 'MAYORISTA') => cambiarListaLinea(item, l)"
+          />
         </div>
 
         <!-- Pie de cobro -->
@@ -602,6 +622,9 @@ onMounted(async () => {
           <p class="text-xs font-bold text-slate-400 mt-5 text-center">
             Toca varias veces para agregar más unidades. Las tallas punteadas están en cero
             según el sistema: si la tienes, véndela igual.
+            <br />
+            Elegir la talla aquí es opcional: tocando la prenda en la grilla se vende de
+            frente y el sistema reparte la talla al cobrar.
           </p>
         </div>
 
@@ -632,38 +655,16 @@ onMounted(async () => {
             <p class="font-black text-slate-300 text-lg">Todavía no agregas nada</p>
           </div>
 
-          <div
+          <LineaCarritoRapida
             v-for="(item, i) in carrito"
             :key="item.clave || item.sku"
-            class="bg-slate-50 border-2 border-slate-100 rounded-2xl p-3"
-          >
-            <div class="flex items-start justify-between gap-2 mb-2">
-              <div class="min-w-0">
-                <p class="font-black text-slate-800 leading-tight">{{ item.nombre }}</p>
-                <span class="inline-block bg-slate-800 text-white text-xs font-black px-2 py-0.5 rounded-md mt-1">
-                  T. {{ item.talla }}
-                </span>
-              </div>
-              <button @click="quitarDelCarrito(i)" class="text-slate-300 hover:text-red-500 text-2xl leading-none font-black shrink-0 px-1">×</button>
-            </div>
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
-                <button
-                  @click="cambiarCantidad(item, item.cantidad - 1)"
-                  :disabled="item.cantidad <= 1"
-                  class="w-12 h-12 rounded-xl bg-white border-2 border-slate-200 font-black text-2xl leading-none flex items-center justify-center active:scale-90 disabled:opacity-30"
-                >−</button>
-                <span class="w-10 text-center font-black text-2xl tabular-nums">{{ item.cantidad }}</span>
-                <button
-                  @click="cambiarCantidad(item, item.cantidad + 1)"
-                  class="w-12 h-12 rounded-xl bg-white border-2 border-slate-200 font-black text-2xl leading-none flex items-center justify-center active:scale-90"
-                >+</button>
-              </div>
-              <span class="font-black text-lg tabular-nums">
-                S/ {{ ((Number(item.precioUnitario) || 0) * item.cantidad).toFixed(2) }}
-              </span>
-            </div>
-          </div>
+            :item="item"
+            :listaVenta="tipoVenta"
+            @quitar="quitarDelCarrito(i)"
+            @cantidad="(n: number) => cambiarCantidad(item, n)"
+            @precio="(v: string) => cambiarPrecio(item, v)"
+            @lista="(l: 'MINORISTA' | 'MAYORISTA') => cambiarListaLinea(item, l)"
+          />
         </div>
 
         <div class="border-t-2 border-slate-100 p-4 space-y-3 shrink-0">
