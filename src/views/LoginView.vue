@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import { useRouter } from 'vue-router';
+import { homeDeRol } from '../router';
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -19,7 +20,9 @@ const handleLogin = async () => {
       pass: password.value 
     });
     
-    if (success) router.push('/'); // Si entra, lo mandamos al Dashboard
+    // Cada rol entra a SU pantalla: el admin al Dashboard, el vendedor a la
+    // Caja Rápida (ya no ve el Dashboard).
+    if (success) router.push(homeDeRol(authStore.rol));
   } catch (err) {
     error.value = true;
   }

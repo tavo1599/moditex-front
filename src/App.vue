@@ -9,6 +9,9 @@ const authStore = useAuthStore()
 const ui = useUiStore()
 const route = useRoute()
 
+// El menú lateral es cajón hasta 1024px (ver Sidebar.vue), así que hasta ahí
+// el contenido necesita aire arriba para no quedar debajo del botón ☰.
+//
 // Las rutas con meta.pantallaCompleta (la Caja Rápida) se dibujan solas, sin
 // sidebar ni márgenes: el cajero solo debe ver la caja y no agobiarse con el
 // resto del ERP.
@@ -25,8 +28,8 @@ const conChrome = computed(() => authStore.estaAutenticado && !pantallaCompleta.
     <main
       class="flex-1 overflow-y-auto"
       :class="{
-        'px-4 py-4 pt-20 md:p-8': conChrome,
-        'md:pl-20': conChrome && ui.sidebarColapsado
+        'px-4 py-4 pt-20 lg:p-8': conChrome,
+        'lg:pl-20': conChrome && ui.sidebarColapsado
       }"
     >
       <RouterView />
@@ -34,20 +37,3 @@ const conChrome = computed(() => authStore.estaAutenticado && !pantallaCompleta.
 
   </div>
 </template>
-
-<style>
-/* Un pequeño toque para que la barra de desplazamiento se vea moderna */
-::-webkit-scrollbar {
-  width: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-</style>

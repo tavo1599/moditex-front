@@ -19,6 +19,9 @@ interface Cliente {
 
 const bodegas = ref<any[]>([])
 const inventarioTotal = ref<any[]>([])
+// Catálogo completo: hace falta para poder vender una prenda creada en
+// Productos que todavía no tuvo ningún ingreso al almacén.
+const productos = ref<any[]>([])
 const colores = ref<any[]>([])
 const clientes = ref<Cliente[]>([])
 const cargando = ref(true)
@@ -27,16 +30,18 @@ const modalNuevoCliente = ref(false)
 const cargarDatos = async () => {
   cargando.value = true
   try {
-    const [resBodegas, resInv, resColores, resClientes] = await Promise.all([
+    const [resBodegas, resInv, resColores, resClientes, resProd] = await Promise.all([
       api.get('/almacen-terminados/bodegas'),
       api.get('/almacen-terminados/inventario'),
       api.get('/colores'),
       api.get('/clientes').catch(() => ({ data: [] })),
+      api.get('/productos').catch(() => ({ data: [] })),
     ])
     bodegas.value = resBodegas.data.filter((b: any) => b.estado)
     inventarioTotal.value = resInv.data
     colores.value = resColores.data
     clientes.value = resClientes.data
+    productos.value = resProd.data
   } catch (error) {
     console.error('Error al cargar datos:', error)
   } finally {
@@ -86,7 +91,8 @@ const {
   avisar,
   descartarAviso,
   construirDetalles,
-} = useVentas(inventarioConSKU, () => {})
+  inventarioVendible,
+} = useVentas(inventarioConSKU, () => {}, productos)
 
 const { enviarVenta } = useColaVentas()
 
@@ -109,11 +115,12 @@ const resultadosBusqueda = computed(() => {
   // mientras la pistola teclea el código de golpe.
   if (q.length < 2 || !bodegaSeleccionada.value) return []
 
+  // Antes se exigía stock > 0 y la prenda sin ingreso no aparecía: el vendedor
+  // la tenía en la mano y no podía cobrarla. Ahora sale igual, al final de la
+  // lista y marcada, y el conteo físico cuadra el inventario después.
   const porTalla = new Map<string, any>()
-  inventarioConSKU.value
-    .filter(
-      (i: any) => Number(i.bodegaId) === Number(bodegaSeleccionada.value) && Number(i.stock) > 0,
-    )
+  inventarioVendible.value
+    .filter((i: any) => Number(i.bodegaId) === Number(bodegaSeleccionada.value))
     .filter((i: any) => {
       const txt = `${i.producto?.nombre || ''} ${i.skuCalculado || ''} ${i.producto?.codigoBarras || ''} ${i.talla}`.toLowerCase()
       return txt.includes(q)
@@ -122,12 +129,18 @@ const resultadosBusqueda = computed(() => {
       const productoId = Number(i.productoId || i.producto?.id)
       const clave = `${productoId}-${i.talla}`
       if (!porTalla.has(clave)) {
-        porTalla.set(clave, { clave, productoId, talla: i.talla, producto: i.producto, stock: 0 })
+        porTalla.set(clave, {
+          clave, productoId, talla: i.talla, producto: i.producto, stock: 0,
+          sinRegistrar: true,
+        })
       }
       porTalla.get(clave).stock += Number(i.stock) || 0
+      if (!i.sinRegistrar) porTalla.get(clave).sinRegistrar = false
     })
 
-  return Array.from(porTalla.values()).slice(0, 25)
+  return Array.from(porTalla.values())
+    .sort((a, b) => b.stock - a.stock)
+    .slice(0, 25)
 })
 
 const seleccionarPrenda = (prenda: any) => {
@@ -142,7 +155,7 @@ const seleccionarPrenda = (prenda: any) => {
 const pareceEtiqueta = computed(() => {
   const q = codigoEscaneado.value.trim()
   if (!q) return false
-  return inventarioConSKU.value.some((i: any) => coincideConPrenda(q, i))
+  return inventarioVendible.value.some((i: any) => coincideConPrenda(q, i))
 })
 
 // Enter con sugerencias abiertas agrega la prenda; sin sugerencias es un código
@@ -407,14 +420,19 @@ onMounted(() => {
                   >Talla {{ p.talla }}</span
                 >
               </div>
-              <span class="text-[11px] font-black text-emerald-600 shrink-0">{{ p.stock }} u.</span>
+              <span
+                v-if="p.sinRegistrar"
+                class="text-[10px] font-black bg-amber-100 text-amber-800 px-2 py-0.5 rounded-lg shrink-0"
+                title="Creada en Productos, sin ingreso al almacén todavía"
+              >🆕 sin ingreso</span>
+              <span v-else class="text-[11px] font-black text-emerald-600 shrink-0">{{ p.stock }} u.</span>
             </button>
           </div>
           <p
             v-else-if="codigoEscaneado.trim().length >= 2 && bodegaSeleccionada"
             class="text-[11px] text-gray-400 font-bold mt-1.5 px-1"
           >
-            Sin coincidencias con stock aquí. Si es un código de etiqueta, presiona Enter.
+            Sin coincidencias en esta bodega. Si es un código de etiqueta, presiona Enter.
           </p>
         </div>
 
@@ -514,7 +532,14 @@ onMounted(() => {
                         >{{ item.talla ? `Talla ${item.talla}` : '📏 Talla surtida' }}</span
                       >
                       <span
-                        v-if="item.stockForzado"
+                        v-if="item.sinRegistrar"
+                        class="text-[11px] md:text-[10px] font-black bg-amber-100 text-amber-900 px-2 py-0.5 rounded border border-amber-300"
+                        title="Esta prenda no tiene ingreso registrado en el almacén. Se vende igual y el conteo físico cuadra el inventario."
+                      >
+                        🆕 Sin ingreso al almacén
+                      </span>
+                      <span
+                        v-else-if="item.stockForzado"
                         class="text-[11px] md:text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200"
                         title="El sistema no registraba stock suficiente. Revisar inventario."
                       >
@@ -603,7 +628,7 @@ onMounted(() => {
           <!-- ── Grilla táctil: toca la prenda, luego la talla ── -->
           <div v-show="pestana === 'grilla'" class="flex-1 min-h-0">
             <GrillaPrendas
-              :inventario="inventarioConSKU"
+              :inventario="inventarioVendible"
               :carrito="carrito"
               :bodegaId="bodegaSeleccionada"
               :listaPrecio="tipoVenta"

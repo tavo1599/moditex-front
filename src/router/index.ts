@@ -6,13 +6,19 @@ import { useAuthStore } from '../stores/auth';
 // Las que no tienen meta.roles quedan abiertas a cualquier usuario autenticado.
 const SOLO_ADMIN = { roles: ['ADMIN'] };
 
+// A dónde llega cada rol al entrar, y a dónde se le manda si intenta abrir algo
+// que no le toca. El ADMIN arranca en el Dashboard; el VENDEDOR en la Caja
+// Rápida, que es su pantalla de trabajo (ya no ve el Dashboard).
+export const homeDeRol = (rol?: string) => (rol === 'VENDEDOR' ? '/caja' : '/');
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
       name: 'home',
-      component: HomeView
+      component: HomeView,
+      meta: SOLO_ADMIN
     },
     {
       path: '/almacen',
@@ -23,8 +29,7 @@ const router = createRouter({
     {
       path: '/reportes',
       name: 'reportes',
-      component: () => import('../views/ReportesView.vue'),
-      meta: SOLO_ADMIN
+      component: () => import('../views/ReportesView.vue')
     },
     {
       path: '/ingenieria',
@@ -143,7 +148,8 @@ const router = createRouter({
     {
       path: '/cobranzas',
       name: 'cobranzas',
-      component: () => import('../views/CobranzasView.vue')
+      component: () => import('../views/CobranzasView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/compras',
@@ -166,8 +172,7 @@ const router = createRouter({
     {
       path: '/etiquetas',
       name: 'etiquetas',
-      component: () => import('../views/EtiquetasView.vue'),
-      meta: SOLO_ADMIN
+      component: () => import('../views/EtiquetasView.vue')
     },
     {
       path: '/cierre-caja',
@@ -182,8 +187,7 @@ const router = createRouter({
     {
       path: '/conteo-inventario',
       name: 'conteo-inventario',
-      component: () => import('../views/ConteoInventarioView.vue'),
-      meta: SOLO_ADMIN
+      component: () => import('../views/ConteoInventarioView.vue')
     },
     {
       path: '/web/productos',
@@ -247,10 +251,12 @@ router.beforeEach((to, from, next) => {
     return next({ name: 'login' });
   }
 
-  // 2. Si la ruta exige roles y el usuario no lo tiene, lo mandamos al inicio
+  // 2. Si la ruta exige roles y el usuario no lo tiene, lo mandamos a SU hogar.
+  //    (Antes era siempre 'home' = Dashboard; ahora el Dashboard es de ADMIN,
+  //    así que mandar ahí a un vendedor lo dejaría rebotando sin fin.)
   const rolesPermitidos = to.meta.roles as string[] | undefined;
   if (rolesPermitidos && !rolesPermitidos.includes(authStore.rol)) {
-    return next({ name: 'home' });
+    return next(homeDeRol(authStore.rol));
   }
 
   next();

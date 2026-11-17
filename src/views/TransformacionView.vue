@@ -385,9 +385,18 @@ const confirmarRecepcion = async () => {
       recibidos: lista,
     })
     const bodega = bodegas.value.find((b) => b.id === Number(bodegaDestinoId.value))
+
+    // Si con esta recepción algún rollo quedó liquidado, el servidor lo dice:
+    // esa tela ya es prenda, así que el rollo sale del almacén de tela. No se
+    // borra (el código no se reusa y de ahí sale el costo de estas prendas).
+    const cerrados: string[] = data.rollosCerrados || []
     avisar(
       `✅ ${totalARecibir.value} prendas de ${data.producto?.nombre} entraron a ${bodega?.nombre}. ` +
-        'Ya se pueden vender o trasladar.',
+        'Ya se pueden vender o trasladar.' +
+        (cerrados.length
+          ? ` 📦 ${cerrados.join(', ')} ${cerrados.length === 1 ? 'se cerró' : 'se cerraron'}: ` +
+            'toda su tela ya es prenda y sale del almacén de rollos.'
+          : ''),
     )
     modalRecibir.value = null
     await cargarHistorial()
@@ -587,9 +596,9 @@ watch(pestania, (p) => {
   <div class="max-w-7xl mx-auto pb-24">
 
     <!-- ===================== ENCABEZADO ===================== -->
-    <div class="bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-3xl p-6 md:p-8 text-white shadow-xl mb-6">
+    <div class="bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 rounded-3xl p-4 sm:p-6 md:p-8 text-white shadow-xl mb-6">
       <p class="text-violet-200 font-bold uppercase tracking-widest text-xs mb-1">Paso 2 de 4</p>
-      <h1 class="text-3xl md:text-4xl font-black tracking-tight">✂️ Transformación</h1>
+      <h1 class="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight">✂️ Transformación</h1>
       <p class="text-violet-100 mt-2 max-w-3xl">
         Aquí la tela se vuelve prendas. Elige los <strong>rollos que se llevó el cortador</strong>,
         di <strong>en qué prenda los convirtió</strong> y, cuando el taller devuelva la producción,
@@ -616,22 +625,31 @@ watch(pestania, (p) => {
     </transition>
 
     <!-- ===================== PESTAÑAS GRANDES ===================== -->
-    <div class="grid grid-cols-3 gap-3 mb-6">
+    <div class="grid grid-cols-3 gap-2 sm:gap-3 mb-6">
       <button
         @click="pestania = 'nuevo'"
-        class="py-5 rounded-2xl font-black text-base md:text-lg shadow transition-all active:scale-95"
+        class="px-2 py-3.5 sm:py-5 rounded-2xl font-black text-xs sm:text-base md:text-lg leading-tight shadow transition-all active:scale-95"
         :class="pestania === 'nuevo' ? 'bg-violet-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50'"
-      >✂️ Nuevo Corte</button>
+      >
+        <span class="block sm:hidden">✂️<br />Cortar</span>
+        <span class="hidden sm:inline">✂️ Nuevo Corte</span>
+      </button>
       <button
         @click="pestania = 'historial'"
-        class="py-5 rounded-2xl font-black text-base md:text-lg shadow transition-all active:scale-95"
+        class="px-2 py-3.5 sm:py-5 rounded-2xl font-black text-xs sm:text-base md:text-lg leading-tight shadow transition-all active:scale-95"
         :class="pestania === 'historial' ? 'bg-sky-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50'"
-      >📋 Historial / Recibir</button>
+      >
+        <span class="block sm:hidden">📥<br />Recibir</span>
+        <span class="hidden sm:inline">📋 Historial / Recibir</span>
+      </button>
       <button
         @click="pestania = 'reporte'"
-        class="py-5 rounded-2xl font-black text-base md:text-lg shadow transition-all active:scale-95"
+        class="px-2 py-3.5 sm:py-5 rounded-2xl font-black text-xs sm:text-base md:text-lg leading-tight shadow transition-all active:scale-95"
         :class="pestania === 'reporte' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50'"
-      >📈 Reporte</button>
+      >
+        <span class="block sm:hidden">📈<br />Reporte</span>
+        <span class="hidden sm:inline">📈 Reporte</span>
+      </button>
     </div>
 
     <!-- ======================================================================
@@ -641,7 +659,7 @@ watch(pestania, (p) => {
 
       <!-- ---------- PASO 1: ELEGIR LOS ROLLOS ---------- -->
       <div class="bg-white rounded-3xl shadow-sm overflow-hidden">
-        <div class="bg-gradient-to-r from-cyan-500 to-sky-600 px-6 py-5 text-white">
+        <div class="bg-gradient-to-r from-cyan-500 to-sky-600 px-4 sm:px-6 py-4 sm:py-5 text-white">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 class="text-2xl font-black flex items-center gap-2">
@@ -654,12 +672,12 @@ watch(pestania, (p) => {
             </div>
             <div class="bg-white/20 rounded-2xl px-5 py-3 text-center">
               <p class="text-[11px] font-bold uppercase tracking-wider text-sky-100">Kilos elegidos</p>
-              <p class="text-3xl font-black">{{ kilosUsados.toFixed(2) }}</p>
+              <p class="text-2xl sm:text-3xl font-black">{{ kilosUsados.toFixed(2) }}</p>
             </div>
           </div>
         </div>
 
-        <div class="p-6">
+        <div class="p-4 sm:p-6">
           <!-- Filtro por color + atajos -->
           <div class="flex flex-wrap gap-2 mb-5 items-center">
             <button
@@ -689,8 +707,8 @@ watch(pestania, (p) => {
 
           <p v-if="cargando" class="text-center py-10 text-slate-400 font-bold">Cargando rollos...</p>
 
-          <div v-else-if="rollosVisibles.length === 0" class="bg-amber-50 border-2 border-amber-200 rounded-2xl p-8 text-center">
-            <p class="text-4xl mb-2">🧵</p>
+          <div v-else-if="rollosVisibles.length === 0" class="bg-amber-50 border-2 border-amber-200 rounded-2xl p-5 sm:p-8 text-center">
+            <p class="text-3xl sm:text-4xl mb-2">🧵</p>
             <p class="font-black text-amber-900 text-lg">No hay tela disponible</p>
             <p class="text-amber-700 text-sm mt-1">
               Registra rollos primero en <strong>Almacén de Rollos</strong>.
@@ -732,7 +750,7 @@ watch(pestania, (p) => {
               <div v-if="estaSeleccionado(r.id)" class="mt-3 pt-3 border-t-2 border-emerald-200" @click.stop>
                 <label class="block text-[11px] font-black uppercase tracking-wider text-emerald-700 mb-1">Kilos usados</label>
                 <input
-                  v-model.number="seleccion[r.id]" type="number" step="0.001" min="0" :max="Number(r.pesoActual)"
+                  v-model.number="seleccion[r.id]" type="number" inputmode="decimal" step="0.001" min="0" :max="Number(r.pesoActual)"
                   class="w-full border-2 rounded-xl px-3 h-11 text-lg font-black text-slate-800 outline-none"
                   :class="Number(seleccion[r.id]) > Number(r.pesoActual) + 0.0001
                     ? 'border-rose-400 bg-rose-50 text-rose-700'
@@ -768,7 +786,7 @@ watch(pestania, (p) => {
 
       <!-- ---------- PASO 2: EN QUÉ PRENDA SE CONVIRTIÓ ---------- -->
       <div class="bg-white rounded-3xl shadow-sm overflow-hidden">
-        <div class="bg-gradient-to-r from-violet-500 to-purple-600 px-6 py-5 text-white">
+        <div class="bg-gradient-to-r from-violet-500 to-purple-600 px-4 sm:px-6 py-4 sm:py-5 text-white">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 class="text-2xl font-black flex items-center gap-2">
@@ -781,12 +799,12 @@ watch(pestania, (p) => {
             </div>
             <div class="bg-white/20 rounded-2xl px-5 py-3 text-center">
               <p class="text-[11px] font-bold uppercase tracking-wider text-violet-100">Prendas</p>
-              <p class="text-3xl font-black">{{ totalPrendas }}</p>
+              <p class="text-2xl sm:text-3xl font-black">{{ totalPrendas }}</p>
             </div>
           </div>
         </div>
 
-        <div class="p-6 space-y-5">
+        <div class="p-4 sm:p-6 space-y-5">
           <!-- Tipo de prenda -->
           <div>
             <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-2">
@@ -837,8 +855,9 @@ watch(pestania, (p) => {
           </div>
 
           <!-- LA MATRIZ -->
+          <p v-if="filas.length > 0" class="sm:hidden text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">👉 Desliza la tabla para ver todas las tallas</p>
           <div v-if="filas.length === 0" class="bg-violet-50 border-2 border-dashed border-violet-300 rounded-2xl p-10 text-center">
-            <p class="text-4xl mb-2">👕</p>
+            <p class="text-3xl sm:text-4xl mb-2">👕</p>
             <p class="font-black text-violet-900">Agrega al menos un color para empezar la tabla</p>
             <p class="text-violet-700 text-sm mt-1">Usa el botón ⚡ de arriba para cargar los colores de los rollos.</p>
           </div>
@@ -863,7 +882,7 @@ watch(pestania, (p) => {
                   </td>
                   <td v-for="t in tallas" :key="t" class="px-2 py-2">
                     <input
-                      v-model.number="f.cant[t]" type="number" min="0" placeholder="0"
+                      v-model.number="f.cant[t]" type="number" inputmode="numeric" min="0" placeholder="0"
                       class="w-full border-2 border-slate-200 rounded-xl h-12 text-center text-lg font-black text-slate-800 focus:border-violet-500 focus:bg-violet-50 outline-none"
                     />
                   </td>
@@ -890,17 +909,17 @@ watch(pestania, (p) => {
           <div v-if="totalPrendas > 0 && kilosUsados > 0" class="grid sm:grid-cols-3 gap-3">
             <div class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4">
               <p class="text-[11px] font-black uppercase tracking-wider text-emerald-700">Rendimiento</p>
-              <p class="text-3xl font-black text-emerald-700">{{ rendimiento.toFixed(2) }}</p>
+              <p class="text-2xl sm:text-3xl font-black text-emerald-700">{{ rendimiento.toFixed(2) }}</p>
               <p class="text-xs text-emerald-600 font-semibold">prendas por kilo de tela</p>
             </div>
             <div class="bg-violet-50 border-2 border-violet-200 rounded-2xl p-4">
               <p class="text-[11px] font-black uppercase tracking-wider text-violet-700">Costo de tela</p>
-              <p class="text-3xl font-black text-violet-700">S/ {{ costoPorPrenda.toFixed(2) }}</p>
+              <p class="text-2xl sm:text-3xl font-black text-violet-700">S/ {{ costoPorPrenda.toFixed(2) }}</p>
               <p class="text-xs text-violet-600 font-semibold">por cada prenda</p>
             </div>
             <div class="bg-sky-50 border-2 border-sky-200 rounded-2xl p-4">
               <p class="text-[11px] font-black uppercase tracking-wider text-sky-700">Tela usada</p>
-              <p class="text-3xl font-black text-sky-700">{{ (kilosUsados / totalPrendas * 1000).toFixed(0) }}<span class="text-base"> g</span></p>
+              <p class="text-2xl sm:text-3xl font-black text-sky-700">{{ (kilosUsados / totalPrendas * 1000).toFixed(0) }}<span class="text-base"> g</span></p>
               <p class="text-xs text-sky-600 font-semibold">por cada prenda</p>
             </div>
           </div>
@@ -909,7 +928,7 @@ watch(pestania, (p) => {
 
       <!-- ---------- PASO 3: DATOS Y GUARDAR ---------- -->
       <div class="bg-white rounded-3xl shadow-sm overflow-hidden">
-        <div class="bg-gradient-to-r from-slate-700 to-slate-800 px-6 py-5 text-white">
+        <div class="bg-gradient-to-r from-slate-700 to-slate-800 px-4 sm:px-6 py-4 sm:py-5 text-white">
           <h2 class="text-2xl font-black flex items-center gap-2">
             <span class="bg-white/20 w-9 h-9 rounded-xl grid place-items-center text-lg">3</span>
             📝 Datos del corte
@@ -917,7 +936,7 @@ watch(pestania, (p) => {
           <p class="text-slate-300 text-sm mt-1">Opcional, pero ayuda mucho cuando hay que revisar algo después.</p>
         </div>
 
-        <div class="p-6 space-y-5">
+        <div class="p-4 sm:p-6 space-y-5">
           <div class="grid md:grid-cols-3 gap-4">
             <div>
               <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-2">Cortador</label>
@@ -955,19 +974,19 @@ watch(pestania, (p) => {
             <p class="text-xs font-black uppercase tracking-wider text-violet-700 mb-3">Resumen del corte</p>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
               <div>
-                <p class="text-3xl font-black text-slate-800">{{ rollosElegidos.length }}</p>
+                <p class="text-2xl sm:text-3xl font-black text-slate-800">{{ rollosElegidos.length }}</p>
                 <p class="text-xs font-bold text-slate-500 uppercase">Rollos</p>
               </div>
               <div>
-                <p class="text-3xl font-black text-sky-700">{{ kilosUsados.toFixed(2) }}</p>
+                <p class="text-2xl sm:text-3xl font-black text-sky-700">{{ kilosUsados.toFixed(2) }}</p>
                 <p class="text-xs font-bold text-slate-500 uppercase">Kilos</p>
               </div>
               <div>
-                <p class="text-3xl font-black text-violet-700">{{ totalPrendas }}</p>
+                <p class="text-2xl sm:text-3xl font-black text-violet-700">{{ totalPrendas }}</p>
                 <p class="text-xs font-bold text-slate-500 uppercase">Prendas</p>
               </div>
               <div>
-                <p class="text-3xl font-black text-emerald-700">S/ {{ costoTela.toFixed(2) }}</p>
+                <p class="text-2xl sm:text-3xl font-black text-emerald-700">S/ {{ costoTela.toFixed(2) }}</p>
                 <p class="text-xs font-bold text-slate-500 uppercase">Costo tela</p>
               </div>
             </div>
@@ -981,13 +1000,13 @@ watch(pestania, (p) => {
           <div class="flex flex-wrap gap-3">
             <button
               @click="guardarCorte" :disabled="guardando || !puedeGuardar"
-              class="flex-1 min-w-[280px] bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700
+              class="w-full sm:flex-1 sm:min-w-[280px] bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700
                      disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed
                      text-white font-black text-xl py-6 rounded-2xl shadow-lg active:scale-95 transition-all"
             >
               {{ guardando ? 'Registrando...' : '✂️ Registrar Transformación' }}
             </button>
-            <button @click="limpiarTodo" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-8 py-6 rounded-2xl transition-colors">
+            <button @click="limpiarTodo" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-5 sm:px-8 py-6 rounded-2xl transition-colors">
               Limpiar todo
             </button>
           </div>
@@ -1056,7 +1075,7 @@ watch(pestania, (p) => {
               </div>
 
               <!-- Cifras del corte -->
-              <div class="flex gap-5 text-center shrink-0">
+              <div class="flex gap-3 sm:gap-5 text-center shrink-0">
                 <div>
                   <p class="text-2xl font-black text-sky-700">{{ Number(c.pesoTotalUsado).toFixed(1) }}</p>
                   <p class="text-[10px] font-bold uppercase text-slate-500">kg usados</p>
@@ -1105,19 +1124,19 @@ watch(pestania, (p) => {
               <button
                 v-if="c.estado === 'EN_PROCESO' || c.estado === 'PARCIAL'"
                 @click="abrirRecepcion(c)"
-                class="flex-1 min-w-[200px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700
+                class="w-full sm:flex-1 sm:min-w-[200px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700
                        text-white font-black py-4 rounded-xl shadow active:scale-95 transition-all"
               >📥 Recibir del taller → Almacén</button>
 
               <button
                 @click="verDetalle(c)"
-                class="bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold px-6 py-4 rounded-xl border-2 border-sky-200"
+                class="bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold px-4 sm:px-6 py-4 rounded-xl border-2 border-sky-200"
               >👁️ Ver detalle</button>
 
               <button
                 v-if="c.estado !== 'ANULADO' && c.prendasRecibidas === 0"
                 @click="anularCorte(c)"
-                class="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-6 py-4 rounded-xl border-2 border-rose-200"
+                class="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-4 sm:px-6 py-4 rounded-xl border-2 border-rose-200"
               >🚫 Anular</button>
             </div>
           </div>
@@ -1148,7 +1167,7 @@ watch(pestania, (p) => {
         <button @click="cargarReporte" class="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-7 h-12 rounded-xl shadow active:scale-95 transition-transform">
           🔎 Ver reporte
         </button>
-        <button v-if="reporte" @click="exportarReporte" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-6 h-12 rounded-xl">
+        <button v-if="reporte" @click="exportarReporte" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 sm:px-6 h-12 rounded-xl">
           ⬇️ Exportar CSV
         </button>
       </div>
@@ -1160,17 +1179,17 @@ watch(pestania, (p) => {
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div class="bg-white rounded-2xl p-5 border-l-8 border-sky-500 shadow-sm">
             <p class="text-[11px] font-black uppercase tracking-wider text-slate-500">Tela consumida</p>
-            <p class="text-3xl font-black text-sky-600 mt-1">{{ reporte.totales.kilosUsados.toFixed(1) }}<span class="text-lg"> kg</span></p>
+            <p class="text-2xl sm:text-3xl font-black text-sky-600 mt-1">{{ reporte.totales.kilosUsados.toFixed(1) }}<span class="text-lg"> kg</span></p>
             <p class="text-xs text-slate-500 mt-1">{{ reporte.totales.cortes }} cortes</p>
           </div>
           <div class="bg-white rounded-2xl p-5 border-l-8 border-violet-500 shadow-sm">
             <p class="text-[11px] font-black uppercase tracking-wider text-slate-500">Prendas cortadas</p>
-            <p class="text-3xl font-black text-violet-600 mt-1">{{ reporte.totales.prendasCortadas }}</p>
+            <p class="text-2xl sm:text-3xl font-black text-violet-600 mt-1">{{ reporte.totales.prendasCortadas }}</p>
             <p class="text-xs text-slate-500 mt-1">Lo que salió al taller</p>
           </div>
           <div class="bg-white rounded-2xl p-5 border-l-8 border-emerald-500 shadow-sm">
             <p class="text-[11px] font-black uppercase tracking-wider text-slate-500">Prendas recibidas</p>
-            <p class="text-3xl font-black text-emerald-600 mt-1">{{ reporte.totales.prendasRecibidas }}</p>
+            <p class="text-2xl sm:text-3xl font-black text-emerald-600 mt-1">{{ reporte.totales.prendasRecibidas }}</p>
             <p class="text-xs text-slate-500 mt-1">
               <span v-if="reporte.totales.prendasPendientes > 0" class="text-amber-600 font-bold">
                 {{ reporte.totales.prendasPendientes }} aún en el taller
@@ -1180,7 +1199,7 @@ watch(pestania, (p) => {
           </div>
           <div class="bg-white rounded-2xl p-5 border-l-8 border-amber-500 shadow-sm">
             <p class="text-[11px] font-black uppercase tracking-wider text-slate-500">Rendimiento</p>
-            <p class="text-3xl font-black text-amber-600 mt-1">{{ reporte.totales.rendimientoPrendasPorKilo.toFixed(2) }}</p>
+            <p class="text-2xl sm:text-3xl font-black text-amber-600 mt-1">{{ reporte.totales.rendimientoPrendasPorKilo.toFixed(2) }}</p>
             <p class="text-xs text-slate-500 mt-1">prendas por kilo de tela</p>
           </div>
         </div>
@@ -1251,6 +1270,7 @@ watch(pestania, (p) => {
             </div>
           </div>
 
+          <p v-if="matrizColores.length > 0" class="sm:hidden text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">👉 Desliza la tabla para ver todas las tallas</p>
           <p v-if="matrizColores.length === 0" class="text-center py-10 text-slate-400 font-bold">
             Todavía no hay cortes en este periodo.
           </p>
@@ -1345,19 +1365,19 @@ watch(pestania, (p) => {
     </div>
 
     <!-- ===================== MODAL: RECIBIR ===================== -->
-    <div v-if="modalRecibir" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="modalRecibir = null">
-      <div class="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-        <div class="bg-gradient-to-r from-emerald-500 to-teal-600 px-6 py-5 text-white flex items-start justify-between">
+    <div v-if="modalRecibir" class="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" @click.self="modalRecibir = null">
+      <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+        <div class="bg-gradient-to-r from-emerald-500 to-teal-600 px-4 sm:px-6 py-4 sm:py-5 text-white flex items-start justify-between">
           <div>
             <h3 class="text-2xl font-black">📥 Recibir del taller</h3>
             <p class="text-emerald-50 text-sm mt-1">
               {{ modalRecibir.codigo }} · {{ modalRecibir.producto?.nombre }}
             </p>
           </div>
-          <button @click="modalRecibir = null" class="text-white/80 hover:text-white text-3xl leading-none">&times;</button>
+          <button @click="modalRecibir = null" class="text-white/80 hover:text-white text-2xl sm:text-3xl leading-none">&times;</button>
         </div>
 
-        <div class="p-6 overflow-y-auto space-y-5">
+        <div class="p-4 sm:p-6 overflow-y-auto space-y-5">
           <div class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 text-sm text-emerald-900">
             Cuenta las prendas que <strong>realmente llegaron</strong>. Puede ser menos de lo cortado
             (fallas, mermas): se registra lo que entró de verdad. Al confirmar, estas prendas
@@ -1396,6 +1416,7 @@ watch(pestania, (p) => {
               </div>
             </div>
 
+            <p class="sm:hidden text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">👉 Desliza la tabla para ver todas las tallas</p>
             <div class="overflow-x-auto rounded-2xl border-2 border-slate-200">
               <table class="w-full text-sm border-collapse">
                 <thead>
@@ -1426,7 +1447,7 @@ watch(pestania, (p) => {
                       <template v-if="detalleDe(c, t) && faltaDe(c, t) > 0">
                         <input
                           v-model.number="recibidos[clave(c, t)]"
-                          type="number" min="0" :max="faltaDe(c, t)" placeholder="0"
+                          type="number" inputmode="numeric" min="0" :max="faltaDe(c, t)" placeholder="0"
                           class="w-full border-2 rounded-xl h-12 text-center text-lg font-black outline-none"
                           :class="enCasilla(c, t) > faltaDe(c, t)
                             ? 'border-rose-400 bg-rose-50 text-rose-700'
@@ -1452,7 +1473,7 @@ watch(pestania, (p) => {
                       <template v-else>
                         <input
                           v-model.number="recibidos[clave(c, t)]"
-                          type="number" min="0" placeholder="—"
+                          type="number" inputmode="numeric" min="0" placeholder="—"
                           class="w-full border-2 border-dashed rounded-xl h-12 text-center text-lg font-black outline-none"
                           :class="enCasilla(c, t) > 0
                             ? 'border-amber-400 bg-amber-50 text-amber-800'
@@ -1516,7 +1537,7 @@ watch(pestania, (p) => {
           </div>
         </div>
 
-        <div class="p-6 border-t-2 border-slate-100 space-y-3">
+        <div class="p-4 sm:p-6 border-t-2 border-slate-100 space-y-3">
           <!-- Si el botón está apagado, aquí se dice exactamente por qué -->
           <p v-if="razonBloqueoRecepcion" class="text-sm font-bold text-amber-700 bg-amber-50 border-2 border-amber-200 rounded-xl px-4 py-3">
             ⚠️ {{ razonBloqueoRecepcion }}
@@ -1524,30 +1545,30 @@ watch(pestania, (p) => {
           <div class="flex flex-wrap gap-3">
             <button
               @click="confirmarRecepcion" :disabled="guardando || !!razonBloqueoRecepcion"
-              class="flex-1 min-w-[240px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700
+              class="w-full sm:flex-1 sm:min-w-[240px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700
                      disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed
                      text-white font-black text-lg py-5 rounded-2xl shadow-lg active:scale-95 transition-all"
             >{{ guardando ? 'Registrando...' : `✅ Confirmar ingreso de ${totalARecibir} prendas` }}</button>
-            <button @click="modalRecibir = null" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-7 py-5 rounded-2xl">Cancelar</button>
+            <button @click="modalRecibir = null" class="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-7 py-4 sm:py-5 rounded-2xl">Cancelar</button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- ===================== MODAL: DETALLE ===================== -->
-    <div v-if="modalDetalle" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="modalDetalle = null">
-      <div class="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-        <div class="bg-slate-800 px-6 py-5 text-white flex items-start justify-between">
+    <div v-if="modalDetalle" class="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" @click.self="modalDetalle = null">
+      <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+        <div class="bg-slate-800 px-4 sm:px-6 py-4 sm:py-5 text-white flex items-start justify-between">
           <div>
             <h3 class="text-2xl font-black">{{ modalDetalle.codigo }}</h3>
             <p class="text-slate-300 text-sm mt-1">
               {{ modalDetalle.producto?.nombre }} · {{ fecha(modalDetalle.fecha) }}
             </p>
           </div>
-          <button @click="modalDetalle = null" class="text-white/80 hover:text-white text-3xl leading-none">&times;</button>
+          <button @click="modalDetalle = null" class="text-white/80 hover:text-white text-2xl sm:text-3xl leading-none">&times;</button>
         </div>
 
-        <div class="p-6 overflow-y-auto space-y-6">
+        <div class="p-4 sm:p-6 overflow-y-auto space-y-6">
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
             <div class="bg-sky-50 rounded-xl p-3 border-2 border-sky-200">
               <p class="text-2xl font-black text-sky-700">{{ Number(modalDetalle.pesoTotalUsado).toFixed(2) }}</p>

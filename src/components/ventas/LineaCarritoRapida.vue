@@ -72,7 +72,14 @@ const subtotal = () => (Number(props.item?.precioUnitario) || 0) * (Number(props
             ✍️ Precio a mano
           </span>
           <span
-            v-if="item.stockForzado"
+            v-if="item.sinRegistrar"
+            class="bg-amber-200 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-md"
+            title="Esta prenda no tiene ingreso registrado en el almacén. Se vende igual y el conteo físico cuadra el inventario."
+          >
+            🆕 Sin ingreso al almacén
+          </span>
+          <span
+            v-else-if="item.stockForzado"
             class="bg-amber-100 text-amber-700 text-[10px] font-black px-2 py-0.5 rounded-md"
             title="El sistema no registraba stock suficiente. Revisar inventario."
           >

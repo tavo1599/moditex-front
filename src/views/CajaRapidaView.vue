@@ -32,6 +32,10 @@ const router = useRouter()
 
 const bodegas = ref<any[]>([])
 const inventarioTotal = ref<any[]>([])
+// Catálogo completo. Hace falta para poder vender una prenda que está creada
+// en Productos pero que nunca tuvo un ingreso al almacén: sin esto, la caja
+// solo conoce lo que el inventario registra y esa prenda no existiría acá.
+const productos = ref<any[]>([])
 const colores = ref<any[]>([])
 const clientes = ref<any[]>([])
 const cargando = ref(true)
@@ -39,16 +43,18 @@ const cargando = ref(true)
 const cargarDatos = async () => {
   cargando.value = true
   try {
-    const [resBodegas, resInv, resColores, resClientes] = await Promise.all([
+    const [resBodegas, resInv, resColores, resClientes, resProd] = await Promise.all([
       api.get('/almacen-terminados/bodegas'),
       api.get('/almacen-terminados/inventario'),
       api.get('/colores'),
       api.get('/clientes').catch(() => ({ data: [] })),
+      api.get('/productos').catch(() => ({ data: [] })),
     ])
     bodegas.value = resBodegas.data.filter((b: any) => b.estado)
     inventarioTotal.value = resInv.data
     colores.value = resColores.data
     clientes.value = resClientes.data
+    productos.value = resProd.data
   } catch (e) {
     console.error('Error cargando la caja:', e)
   } finally {
@@ -90,7 +96,8 @@ const {
   avisar,
   descartarAviso,
   construirDetalles,
-} = useVentas(inventarioConSKU, () => {})
+  inventarioVendible,
+} = useVentas(inventarioConSKU, () => {}, productos)
 
 const { enviarVenta, hayPendientes } = useColaVentas()
 
@@ -130,7 +137,7 @@ const enfocarEscaner = () => nextTick(() => inputEscaner.value?.focus())
 const inventarioBodega = computed(() =>
   bodegaSeleccionada.value === ''
     ? []
-    : inventarioConSKU.value.filter((i: any) => Number(i.bodegaId) === Number(bodegaSeleccionada.value)),
+    : inventarioVendible.value.filter((i: any) => Number(i.bodegaId) === Number(bodegaSeleccionada.value)),
 )
 
 const precioVisible = (producto: any): number => {
@@ -153,9 +160,13 @@ const prendas = computed(() => {
         // por mayor) que después se pueden cambiar línea por línea.
         producto: item.producto,
         stock: 0,
+        // Arranca en true y se cae en cuanto aparece una fila real: así queda
+        // marcada solo la prenda que el almacén todavía no conoce.
+        sinRegistrar: true,
       })
     }
     mapa.get(id).stock += Number(item.stock) || 0
+    if (!item.sinRegistrar) mapa.get(id).sinRegistrar = false
   })
 
   const q = busqueda.value.trim().toLowerCase()
@@ -363,7 +374,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-slate-100 flex flex-col font-sans select-none">
+  <div class="fixed inset-0 bg-slate-100 flex flex-col font-sans select-none area-segura">
 
     <!-- ╔══ BARRA SUPERIOR ══╗ -->
     <header class="bg-slate-900 text-white px-3 md:px-5 py-3 flex items-center gap-3 shrink-0 shadow-lg">
@@ -433,7 +444,7 @@ onMounted(async () => {
         </div>
 
         <div class="flex-1 overflow-y-auto px-3 md:px-5 pb-28 lg:pb-5">
-          <div v-if="!bodegaSeleccionada" class="h-full flex items-center justify-center text-center p-8">
+          <div v-if="!bodegaSeleccionada" class="h-full flex items-center justify-center text-center p-5 sm:p-8">
             <div>
               <p class="text-6xl mb-4">🏪</p>
               <p class="text-xl font-black text-slate-400">Elige la tienda arriba para empezar</p>
@@ -444,7 +455,7 @@ onMounted(async () => {
             <p class="text-xl font-black text-slate-400">Cargando prendas...</p>
           </div>
 
-          <div v-else-if="prendas.length === 0" class="h-full flex items-center justify-center text-center p-8">
+          <div v-else-if="prendas.length === 0" class="h-full flex items-center justify-center text-center p-5 sm:p-8">
             <p class="text-xl font-black text-slate-400">No hay prendas con ese nombre.</p>
           </div>
 
@@ -460,8 +471,11 @@ onMounted(async () => {
               @keyup.enter="venderDirecto(p)"
               role="button"
               tabindex="0"
-              :class="colorDePrenda(p.id)"
+              :class="[colorDePrenda(p.id), p.sinRegistrar ? 'ring-4 ring-amber-300 ring-inset' : '']"
               class="relative text-white rounded-3xl p-4 min-h-[128px] flex flex-col justify-between text-left shadow-md transition-all active:scale-95 cursor-pointer"
+              :title="p.sinRegistrar
+                ? 'Esta prenda todavía no tiene ingreso registrado en el almacén. Se vende igual y se cuadra en el conteo.'
+                : ''"
             >
               <span class="font-black text-base md:text-lg leading-tight line-clamp-3 drop-shadow-sm pr-16">
                 {{ p.nombre }}
@@ -483,7 +497,13 @@ onMounted(async () => {
                     class="bg-white text-slate-900 rounded-lg px-2 py-0.5 text-xs font-black"
                     title="Unidades de esta prenda en el carrito"
                   >🛒 {{ enCarritoPrenda(p.id) }}</span>
-                  <span class="bg-black/25 rounded-lg px-2 py-0.5 text-xs font-black">
+                  <!-- Sin ingreso al almacén: se vende igual, pero se avisa -->
+                  <span
+                    v-if="p.sinRegistrar"
+                    class="bg-amber-300 text-amber-900 rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wider"
+                    title="Creada en Productos, sin ingreso al almacén todavía"
+                  >🆕 sin ingreso</span>
+                  <span v-else class="bg-black/25 rounded-lg px-2 py-0.5 text-xs font-black">
                     {{ p.stock }}
                   </span>
                 </span>
@@ -551,7 +571,7 @@ onMounted(async () => {
           <div class="bg-slate-900 text-white rounded-2xl px-5 py-4 flex items-end justify-between">
             <div>
               <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</p>
-              <p class="text-4xl font-black tabular-nums leading-none mt-1">S/ {{ totalPagar.toFixed(2) }}</p>
+              <p class="text-3xl sm:text-4xl font-black tabular-nums leading-none mt-1">S/ {{ totalPagar.toFixed(2) }}</p>
             </div>
             <p class="text-sm font-bold text-slate-400">{{ totalUnidades }} und</p>
           </div>
@@ -559,7 +579,7 @@ onMounted(async () => {
           <button
             @click="cobrar"
             :disabled="!!bloqueoCobro || cobrando"
-            class="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-200 disabled:text-slate-400 text-white py-5 rounded-2xl font-black text-xl uppercase tracking-wider shadow-lg transition-all active:scale-[0.98]"
+            class="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-200 disabled:text-slate-400 text-white py-4 sm:py-5 rounded-2xl font-black text-xl uppercase tracking-wider shadow-lg transition-all active:scale-[0.98]"
           >
             {{ cobrando ? 'Cobrando...' : bloqueoCobro || '✅ Cobrar' }}
           </button>
@@ -568,7 +588,7 @@ onMounted(async () => {
     </div>
 
     <!-- ── BARRA DE COBRO (móvil) ── -->
-    <div class="lg:hidden fixed bottom-0 inset-x-0 bg-white border-t-2 border-slate-200 p-3 flex items-center gap-3 shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
+    <div class="lg:hidden fixed bottom-0 inset-x-0 bg-white border-t-2 border-slate-200 p-3 pb-seguro flex items-center gap-3 shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
       <button
         @click="carritoAbiertoMovil = true"
         class="relative bg-slate-900 text-white px-5 py-4 rounded-2xl font-black text-lg shrink-0"
@@ -585,7 +605,7 @@ onMounted(async () => {
       <button
         @click="carritoAbiertoMovil = true"
         :disabled="carrito.length === 0"
-        class="bg-emerald-500 disabled:bg-slate-200 disabled:text-slate-400 text-white px-6 py-4 rounded-2xl font-black text-base uppercase tracking-wider shrink-0 active:scale-95 transition-all"
+        class="bg-emerald-500 disabled:bg-slate-200 disabled:text-slate-400 text-white px-4 sm:px-6 py-4 rounded-2xl font-black text-base uppercase tracking-wider shrink-0 active:scale-95 transition-all"
       >Cobrar</button>
     </div>
 
@@ -596,7 +616,7 @@ onMounted(async () => {
       @click.self="cerrarTallas"
     >
       <div class="bg-white w-full sm:max-w-2xl rounded-t-3xl sm:rounded-3xl max-h-[88vh] flex flex-col shadow-2xl">
-        <div :class="colorDePrenda(prendaAbierta.id)" class="text-white px-6 py-5 rounded-t-3xl shrink-0">
+        <div :class="colorDePrenda(prendaAbierta.id)" class="text-white px-4 sm:px-6 py-4 sm:py-5 rounded-t-3xl shrink-0">
           <p class="text-xs font-black uppercase tracking-widest opacity-75">Elige la talla</p>
           <h3 class="text-2xl font-black leading-tight mt-0.5">{{ prendaAbierta.nombre }}</h3>
           <p class="text-lg font-black mt-1 opacity-90">
@@ -613,9 +633,9 @@ onMounted(async () => {
               :class="t.stock > 0
                 ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-500'
                 : 'bg-slate-50 border-dashed border-slate-300 text-slate-400 hover:border-amber-400 hover:text-amber-600'"
-              class="relative border-4 rounded-2xl py-5 flex flex-col items-center justify-center transition-all active:scale-90"
+              class="relative border-4 rounded-2xl py-4 sm:py-5 flex flex-col items-center justify-center transition-all active:scale-90"
             >
-              <span class="font-black text-3xl leading-none">{{ t.talla }}</span>
+              <span class="font-black text-2xl sm:text-3xl leading-none">{{ t.talla }}</span>
               <span class="text-xs font-black uppercase tracking-wider mt-1.5 opacity-70">
                 {{ t.stock }} und
               </span>
@@ -653,7 +673,7 @@ onMounted(async () => {
       <div class="bg-white w-full rounded-t-3xl max-h-[92vh] flex flex-col shadow-2xl">
         <div class="px-5 py-4 border-b-2 border-slate-100 flex items-center justify-between shrink-0">
           <h2 class="text-xl font-black text-slate-800">🛒 Venta</h2>
-          <button @click="carritoAbiertoMovil = false" class="text-slate-400 text-3xl leading-none font-black px-2">×</button>
+          <button @click="carritoAbiertoMovil = false" class="text-slate-400 text-2xl sm:text-3xl leading-none font-black px-2">×</button>
         </div>
 
         <div class="flex-1 overflow-y-auto p-4 space-y-2.5">
@@ -674,7 +694,7 @@ onMounted(async () => {
           />
         </div>
 
-        <div class="border-t-2 border-slate-100 p-4 space-y-3 shrink-0">
+        <div class="border-t-2 border-slate-100 p-4 pb-seguro space-y-3 shrink-0">
           <div class="grid grid-cols-2 gap-2">
             <button
               @click="tipoVenta = 'MINORISTA'"
@@ -713,7 +733,7 @@ onMounted(async () => {
           <div class="bg-slate-900 text-white rounded-2xl px-5 py-4 flex items-end justify-between">
             <div>
               <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</p>
-              <p class="text-4xl font-black tabular-nums leading-none mt-1">S/ {{ totalPagar.toFixed(2) }}</p>
+              <p class="text-3xl sm:text-4xl font-black tabular-nums leading-none mt-1">S/ {{ totalPagar.toFixed(2) }}</p>
             </div>
             <p class="text-sm font-bold text-slate-400">{{ totalUnidades }} und</p>
           </div>
@@ -721,7 +741,7 @@ onMounted(async () => {
           <button
             @click="cobrar"
             :disabled="!!bloqueoCobro || cobrando"
-            class="w-full bg-emerald-500 disabled:bg-slate-200 disabled:text-slate-400 text-white py-5 rounded-2xl font-black text-xl uppercase tracking-wider shadow-lg active:scale-[0.98] transition-all"
+            class="w-full bg-emerald-500 disabled:bg-slate-200 disabled:text-slate-400 text-white py-4 sm:py-5 rounded-2xl font-black text-xl uppercase tracking-wider shadow-lg active:scale-[0.98] transition-all"
           >
             {{ cobrando ? 'Cobrando...' : bloqueoCobro || '✅ Cobrar' }}
           </button>

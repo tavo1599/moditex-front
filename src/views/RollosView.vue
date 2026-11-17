@@ -19,6 +19,97 @@ import api from '../api/axios'
 // ---------------------------------------------------------------------------
 const rollos = ref<any[]>([])
 const resumen = ref<any>(null)
+
+// ---------------------------------------------------------------------------
+// ROLLOS CERRADOS
+// ---------------------------------------------------------------------------
+// Un rollo se CIERRA cuando ya no hay nada que hacer con él: quedó en 0 kg y
+// su tela ya llegó al almacén convertida en prenda. Desde ese momento no sale
+// en el almacén ni en el reporte; se piden a propósito para consultar un
+// código viejo.
+//
+// No se borran, y es a propósito:
+//   · el código se repetiría (el correlativo sale del último id),
+//   · de ese rollo sale el costo de las prendas que produjo,
+//   · si se anula el corte, la tela tiene que poder volver al rollo.
+const cerrados = ref<any[]>([])
+const verCerrados = ref(false)
+const cargandoCerrados = ref(false)
+const cerradosPedidos = ref(false)
+
+/** Se traen una sola vez, cuando alguien los pide. */
+const cargarCerrados = async () => {
+  if (cerradosPedidos.value || cargandoCerrados.value) return
+  cargandoCerrados.value = true
+  try {
+    const { data } = await api.get('/rollos', { params: { soloCerrados: 1 } })
+    cerrados.value = data
+    cerradosPedidos.value = true
+  } catch (e: any) {
+    avisar('No se pudieron traer los rollos cerrados: ' + (e.response?.data?.message || e.message), 'error')
+    verCerrados.value = false
+  } finally {
+    cargandoCerrados.value = false
+  }
+}
+
+/**
+ * EN QUÉ GRUPO ESTÁ CADA ROLLO.
+ * El servidor ya lo manda en `grupo`; esto es el respaldo para que la pantalla
+ * siga clasificando bien aunque el backend sea una versión anterior.
+ */
+const grupoDe = (r: any): string => {
+  if (r?.grupo) return r.grupo
+  if (r?.estado === 'ANULADO') return 'ANULADO'
+  if (r?.cerradoEn) return 'CERRADO'
+  if (Number(r?.pesoActual) > 0) return 'CON_KILOS'
+  return r?.enTransformacion ? 'EN_TRANSFORMACION' : 'SIN_KILOS'
+}
+
+/** Orden en que se lee el almacén: lo usable primero, lo terminado al final. */
+const PESO_DE_GRUPO: Record<string, number> = {
+  CON_KILOS: 0,
+  EN_TRANSFORMACION: 1,
+  SIN_KILOS: 2,
+  CERRADO: 3,
+  ANULADO: 4,
+}
+const ordenAlmacen = (a: any, b: any): number => {
+  const porGrupo = (PESO_DE_GRUPO[grupoDe(a)] ?? 9) - (PESO_DE_GRUPO[grupoDe(b)] ?? 9)
+  if (porGrupo !== 0) return porGrupo
+  const porColor = String(a.color || '').localeCompare(String(b.color || ''), 'es')
+  if (porColor !== 0) return porColor
+  return String(a.codigo || '').localeCompare(String(b.codigo || ''), 'es', { numeric: true })
+}
+
+/** Título y explicación de cada grupo, para los separadores de la lista. */
+const GRUPOS: Record<string, { titulo: string; nota: string; clase: string }> = {
+  CON_KILOS: {
+    titulo: '🧵 Con tela para cortar',
+    nota: 'Agrupados por color.',
+    clase: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+  },
+  EN_TRANSFORMACION: {
+    titulo: '✂️ Sin kilos — su tela está en el taller',
+    nota: 'Siguen a la vista porque si se anula el corte la tela vuelve al rollo. Cuando la producción entre al almacén, se cierran y desaparecen de acá.',
+    clase: 'bg-violet-50 border-violet-200 text-violet-800',
+  },
+  SIN_KILOS: {
+    titulo: '⚪ Sin kilos',
+    nota: 'Quedaron en cero por ajuste de balanza, no por un corte.',
+    clase: 'bg-slate-100 border-slate-200 text-slate-700',
+  },
+  CERRADO: {
+    titulo: '📦 Cerrados — su tela ya es prenda en el almacén',
+    nota: 'No se borran: el código no se reusa nunca y de ellos sale el costo de las prendas que produjeron. Quedan solo para consulta.',
+    clase: 'bg-amber-50 border-amber-200 text-amber-800',
+  },
+  ANULADO: {
+    titulo: '🔴 Anulados',
+    nota: 'Se registraron por error.',
+    clase: 'bg-rose-50 border-rose-200 text-rose-800',
+  },
+}
 const colores = ref<any[]>([])
 const proveedores = ref<any[]>([])
 const cargando = ref(true)
@@ -40,16 +131,70 @@ const filtroTexto = ref('')
 const filtroColor = ref('')
 const filtroEstado = ref('')
 
+/** De dónde sale la lista: solo el almacén vivo, o también los cerrados. */
+const rollosVisibles = computed(() => {
+  if (filtroEstado.value === 'CERRADO') return cerrados.value
+  if (!verCerrados.value) return rollos.value
+  return [...rollos.value, ...cerrados.value].sort(ordenAlmacen)
+})
+
+const coincide = (r: any, txt: string) =>
+  `${r.codigo} ${r.color} ${r.descripcion || ''} ${r.proveedor?.razonSocial || ''}`
+    .toLowerCase()
+    .includes(txt)
+
 const rollosFiltrados = computed(() => {
   const txt = filtroTexto.value.trim().toLowerCase()
-  return rollos.value.filter((r) => {
+  return rollosVisibles.value.filter((r) => {
     if (filtroColor.value && r.color !== filtroColor.value) return false
-    if (filtroEstado.value && r.estado !== filtroEstado.value) return false
+    // 'CERRADO' no es un estado del rollo, es el filtro de arriba.
+    if (filtroEstado.value && filtroEstado.value !== 'CERRADO' && r.estado !== filtroEstado.value) {
+      return false
+    }
     if (!txt) return true
-    return `${r.codigo} ${r.color} ${r.descripcion || ''} ${r.proveedor?.razonSocial || ''}`
-      .toLowerCase()
-      .includes(txt)
+    return coincide(r, txt)
   })
+})
+
+// Los cerrados se traen cuando se piden, por el filtro o por la búsqueda.
+watch([verCerrados, filtroEstado], ([ver, estado]) => {
+  if (ver || estado === 'CERRADO') cargarCerrados()
+})
+
+// Buscar un código que ya no está en el almacén (lo típico: alguien tiene el
+// rollo vacío en la mano y quiere saber en qué se convirtió) trae los cerrados
+// solo para esa búsqueda, en vez de dejar la pantalla en blanco.
+watch(filtroTexto, async (valor) => {
+  const txt = valor.trim().toLowerCase()
+  if (txt.length < 3 || verCerrados.value || filtroEstado.value) return
+  if (rollos.value.some((r) => coincide(r, txt))) return
+  await cargarCerrados()
+  if (cerrados.value.some((r) => coincide(r, txt))) {
+    verCerrados.value = true
+    avisar('📦 Ese rollo ya está cerrado: su tela se convirtió en prenda. Lo mostramos para que puedas ver su detalle.')
+  }
+})
+
+/** La lista con los separadores de grupo intercalados. */
+const listaConGrupos = computed(() => {
+  const salida: any[] = []
+  let grupoActual = ''
+  for (const r of rollosFiltrados.value) {
+    const g = grupoDe(r)
+    if (g !== grupoActual) {
+      grupoActual = g
+      const cuantos = rollosFiltrados.value.filter((x) => grupoDe(x) === g)
+      salida.push({
+        tipo: 'grupo',
+        clave: g,
+        info: GRUPOS[g] || { titulo: g, nota: '', clase: 'bg-slate-100 border-slate-200 text-slate-700' },
+        rollos: cuantos.length,
+        kilos: cuantos.reduce((t, x) => t + Number(x.pesoActual || 0), 0),
+      })
+    }
+    salida.push({ tipo: 'rollo', r })
+  }
+  return salida
 })
 
 const coloresEnStock = computed(() => {
@@ -270,6 +415,12 @@ const repProveedor = ref('' as any)
 const repDesde = ref('')
 const repHasta = ref('')
 const repIncluirAnulados = ref(false)
+// Por defecto el reporte habla del almacén de hoy: los rollos cerrados (su
+// tela ya es prenda) no salen. Se piden a propósito para auditar.
+const repIncluirCerrados = ref(false)
+watch(repIncluirCerrados, (incluir) => {
+  if (incluir) cargarCerrados()
+})
 
 const anulados = ref<any[]>([])
 const cargandoAnulados = ref(false)
@@ -304,6 +455,8 @@ const aFila = (r: any) => {
   const costo = Number(r.costoPorKilo) || 0
   return {
     ...r,
+    grupo: grupoDe(r),
+    cortesTexto: (r.cortesPendientes || []).map((c: any) => c.codigo).join(' · '),
     kgInicial: ini,
     kgActual: act,
     kgUsado: Math.max(0, ini - act),
@@ -316,7 +469,11 @@ const aFila = (r: any) => {
 }
 
 const filasReporte = computed(() => {
-  const base = repIncluirAnulados.value ? [...rollos.value, ...anulados.value] : rollos.value
+  const base = [
+    ...rollos.value,
+    ...(repIncluirCerrados.value ? cerrados.value : []),
+    ...(repIncluirAnulados.value ? anulados.value : []),
+  ]
   const prov = repProveedor.value === '' ? null : Number(repProveedor.value)
 
   return base
@@ -329,7 +486,52 @@ const filasReporte = computed(() => {
       if (repHasta.value && f.dia > repHasta.value) return false
       return true
     })
-    .sort((a, b) => (b.dia || '').localeCompare(a.dia || '') || (b.codigo || '').localeCompare(a.codigo || ''))
+    // Clasificado y en orden: primero la tela que se puede cortar (por color),
+    // al final la que está en el taller, y después lo cerrado y lo anulado.
+    .sort(ordenAlmacen)
+})
+
+/**
+ * LAS MISMAS FILAS, CON SUS TÍTULOS.
+ * Devuelve una lista plana mezclando tres cosas, en el orden en que se leen:
+ *   { tipo: 'grupo' }  → 🧵 con tela / ✂️ en el taller / 📦 cerrados
+ *   { tipo: 'color' }  → subtotal de ese color dentro del grupo
+ *   { tipo: 'fila'  }  → el rollo
+ * La usan la tabla, el Excel y la impresión, así los tres salen iguales.
+ */
+const filasClasificadas = computed(() => {
+  const salida: any[] = []
+  const sumar = (lista: any[]) => ({
+    rollos: lista.length,
+    kilos: lista.reduce((t, x) => t + x.kgActual, 0),
+    ingresados: lista.reduce((t, x) => t + x.kgInicial, 0),
+    valor: lista.reduce((t, x) => t + x.valor, 0),
+  })
+
+  let grupo = ''
+  let color = ''
+  for (const f of filasReporte.value) {
+    if (f.grupo !== grupo) {
+      grupo = f.grupo
+      color = ''
+      salida.push({
+        tipo: 'grupo',
+        clave: grupo,
+        info: GRUPOS[grupo] || { titulo: grupo, nota: '', clase: 'bg-slate-100 border-slate-200 text-slate-700' },
+        ...sumar(filasReporte.value.filter((x) => x.grupo === grupo)),
+      })
+    }
+    if (f.color !== color) {
+      color = f.color
+      salida.push({
+        tipo: 'color',
+        color,
+        ...sumar(filasReporte.value.filter((x) => x.grupo === grupo && x.color === color)),
+      })
+    }
+    salida.push({ tipo: 'fila', f })
+  }
+  return salida
 })
 
 const totalesReporte = computed(() => {
@@ -348,6 +550,8 @@ const totalesReporte = computed(() => {
     empezados: f.filter((r) => r.estado === 'EN_USO').length,
     agotados: f.filter((r) => r.estado === 'CONSUMIDO').length,
     anulados: f.filter((r) => r.estado === 'ANULADO').length,
+    enTransformacion: f.filter((r) => r.grupo === 'EN_TRANSFORMACION').length,
+    cerrados: f.filter((r) => r.grupo === 'CERRADO').length,
     sinPrecio: f.filter((r) => r.costo <= 0).length,
     sinProveedor: f.filter((r) => !r.proveedorId).length,
   }
@@ -394,6 +598,7 @@ const exportarReporte = () => {
     ['Proveedor', nombreProveedorFiltro.value],
     ['Ingresados desde', repDesde.value || 'inicio', 'hasta', repHasta.value || 'hoy'],
     ['Incluye anulados', repIncluirAnulados.value ? 'Sí' : 'No'],
+    ['Incluye cerrados', repIncluirCerrados.value ? 'Sí' : 'No'],
     [],
     ['Rollos', t.rollos],
     ['Kilos ingresados', t.ingresados.toFixed(3)],
@@ -406,21 +611,37 @@ const exportarReporte = () => {
     ['Rollos agotados', t.agotados],
     [],
     ['CÓDIGO', 'FECHA', 'COLOR', 'DESCRIPCIÓN', 'PROVEEDOR', 'PESO INICIAL', 'PESO ACTUAL',
-     'KILOS USADOS', '% RESTANTE', 'ESTADO', 'S/ POR KILO', 'VALOR'],
-    ...filasReporte.value.map((f) => [
-      f.codigo,
-      f.dia,
-      f.color,
-      f.descripcion || '',
-      f.proveedorNombre,
-      f.kgInicial.toFixed(3),
-      f.kgActual.toFixed(3),
-      f.kgUsado.toFixed(3),
-      f.pct.toFixed(1),
-      textoEstado(f.estado),
-      f.costo.toFixed(2),
-      f.valor.toFixed(2),
-    ]),
+     'KILOS USADOS', '% RESTANTE', 'ESTADO', 'EN QUÉ CORTE', 'S/ POR KILO', 'VALOR'],
+    // Mismo orden y mismos títulos que la pantalla: grupo, color y rollo.
+    ...filasClasificadas.value.flatMap((it: any) => {
+      if (it.tipo === 'grupo') {
+        return [
+          [],
+          [it.info.titulo, `${it.rollos} rollos`,
+           `${it.ingresados.toFixed(3)} kg ingresados`, `${it.kilos.toFixed(3)} kg hoy`],
+        ]
+      }
+      if (it.tipo === 'color') {
+        return [[`  ${it.color}`, `${it.rollos} rollos`,
+                 `${it.ingresados.toFixed(3)} kg ingresados`, `${it.kilos.toFixed(3)} kg hoy`]]
+      }
+      const f = it.f
+      return [[
+        f.codigo,
+        f.dia,
+        f.color,
+        f.descripcion || '',
+        f.proveedorNombre,
+        f.kgInicial.toFixed(3),
+        f.kgActual.toFixed(3),
+        f.kgUsado.toFixed(3),
+        f.pct.toFixed(1),
+        textoEstado(f.estado),
+        f.cortesTexto || '',
+        f.costo.toFixed(2),
+        f.valor.toFixed(2),
+      ]]
+    }),
     [],
     ['RESUMEN POR COLOR'],
     ['COLOR', 'ROLLOS', 'INGRESADOS', 'DISPONIBLES', 'USADOS', 'VALOR'],
@@ -453,9 +674,23 @@ const imprimirReporte = () => {
   const esc = (v: any) =>
     String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-  const detalle = filasReporte.value
-    .map(
-      (f) => `<tr>
+  // Las mismas secciones que en pantalla: título de grupo, subtotal por color
+  // y después los rollos. Así la hoja impresa se lee igual que la pantalla.
+  const detalle = filasClasificadas.value
+    .map((it: any) => {
+      if (it.tipo === 'grupo') {
+        return `<tr class="grupo"><td colspan="9">${esc(it.info.titulo)}
+          — ${it.rollos} rollo(s) · ${it.ingresados.toFixed(3)} kg ingresados ·
+          ${it.kilos.toFixed(3)} kg hoy</td></tr>`
+      }
+      if (it.tipo === 'color') {
+        return `<tr class="sub"><td colspan="4">${esc(it.color)} — ${it.rollos} rollo(s)</td>
+          <td class="num">${it.ingresados.toFixed(3)}</td>
+          <td class="num">${it.kilos.toFixed(3)}</td>
+          <td colspan="3"></td></tr>`
+      }
+      const f = it.f
+      return `<tr>
         <td class="mono">${esc(f.codigo)}</td>
         <td>${esc(f.dia)}</td>
         <td>${esc(f.color)}</td>
@@ -463,10 +698,10 @@ const imprimirReporte = () => {
         <td class="num">${f.kgInicial.toFixed(3)}</td>
         <td class="num">${f.kgActual.toFixed(3)}</td>
         <td class="num">${f.kgUsado.toFixed(3)}</td>
-        <td>${esc(textoEstado(f.estado))}</td>
+        <td>${esc(textoEstado(f.estado))}${f.cortesTexto ? ' · ' + esc(f.cortesTexto) : ''}</td>
         <td class="num">${f.valor > 0 ? 'S/ ' + f.valor.toFixed(2) : '—'}</td>
-      </tr>`,
-    )
+      </tr>`
+    })
     .join('')
 
   const porColor = reportePorColor.value
@@ -496,6 +731,9 @@ const imprimirReporte = () => {
       tr:nth-child(even) td{background:#fafafa}
       .num{text-align:right;white-space:nowrap}
       .mono{font-family:monospace}
+      tr.grupo td{background:#222;color:#fff;font-weight:bold;font-size:10px;
+        text-transform:uppercase;letter-spacing:.5px;padding:6px}
+      tr.sub td{background:#eee;font-weight:bold}
       .pie{margin-top:18px;font-size:9px;color:#777;border-top:1px solid #ddd;padding-top:8px}
     </style></head><body>
     <h1>REPORTE DEL ALMACÉN DE ROLLOS</h1>
@@ -544,11 +782,11 @@ const imprimirReporte = () => {
   <div class="max-w-7xl mx-auto pb-24">
 
     <!-- ===================== ENCABEZADO ===================== -->
-    <div class="bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-700 rounded-3xl p-6 md:p-8 text-white shadow-xl mb-6">
+    <div class="bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-700 rounded-3xl p-4 sm:p-6 md:p-8 text-white shadow-xl mb-6">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p class="text-sky-200 font-bold uppercase tracking-widest text-xs mb-1">Paso 1 de 4</p>
-          <h1 class="text-3xl md:text-4xl font-black tracking-tight flex items-center gap-3">
+          <h1 class="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight flex items-center gap-3">
             🧵 Almacén de Rollos
           </h1>
           <p class="text-sky-100 mt-2 max-w-2xl">
@@ -605,22 +843,31 @@ const imprimirReporte = () => {
     <div v-if="resumen" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       <div class="bg-white rounded-2xl p-5 border-l-8 border-emerald-500 shadow-sm">
         <p class="text-[11px] font-black uppercase tracking-wider text-slate-500">Kilos disponibles</p>
-        <p class="text-3xl font-black text-emerald-600 mt-1">{{ resumen.kilosDisponibles.toFixed(1) }}<span class="text-lg"> kg</span></p>
+        <p class="text-2xl sm:text-3xl font-black text-emerald-600 mt-1">{{ resumen.kilosDisponibles.toFixed(1) }}<span class="text-lg"> kg</span></p>
         <p class="text-xs text-slate-500 mt-1">Tela lista para cortar</p>
       </div>
       <div class="bg-white rounded-2xl p-5 border-l-8 border-sky-500 shadow-sm">
         <p class="text-[11px] font-black uppercase tracking-wider text-slate-500">Rollos con tela</p>
-        <p class="text-3xl font-black text-sky-600 mt-1">{{ resumen.rollosDisponibles }}</p>
-        <p class="text-xs text-slate-500 mt-1">De {{ resumen.totalRollos }} registrados</p>
+        <p class="text-2xl sm:text-3xl font-black text-sky-600 mt-1">{{ resumen.rollosDisponibles }}</p>
+        <p class="text-xs text-slate-500 mt-1">De {{ resumen.totalRollos }} en el almacén</p>
+        <button
+          v-if="resumen.rollosCerrados"
+          @click="verCerrados = true"
+          class="text-[11px] font-bold text-amber-700 hover:underline mt-1 text-left"
+          title="Rollos que se acabaron y cuya tela ya llegó al almacén convertida en prenda"
+        >
+          📦 {{ resumen.rollosCerrados }} cerrados
+          <span v-if="resumen.kilosConvertidos">({{ resumen.kilosConvertidos.toFixed(1) }} kg ya son prenda)</span>
+        </button>
       </div>
       <div class="bg-white rounded-2xl p-5 border-l-8 border-violet-500 shadow-sm">
         <p class="text-[11px] font-black uppercase tracking-wider text-slate-500">Valor en tela</p>
-        <p class="text-3xl font-black text-violet-600 mt-1">S/ {{ resumen.valorInventario.toFixed(2) }}</p>
+        <p class="text-2xl sm:text-3xl font-black text-violet-600 mt-1">S/ {{ resumen.valorInventario.toFixed(2) }}</p>
         <p class="text-xs text-slate-500 mt-1">Capital parado en el almacén</p>
       </div>
       <div class="bg-white rounded-2xl p-5 border-l-8 border-amber-500 shadow-sm">
         <p class="text-[11px] font-black uppercase tracking-wider text-slate-500">Kilos ya cortados</p>
-        <p class="text-3xl font-black text-amber-600 mt-1">{{ resumen.kilosConsumidos.toFixed(1) }}<span class="text-lg"> kg</span></p>
+        <p class="text-2xl sm:text-3xl font-black text-amber-600 mt-1">{{ resumen.kilosConsumidos.toFixed(1) }}<span class="text-lg"> kg</span></p>
         <p class="text-xs text-slate-500 mt-1">Se fueron a producción</p>
       </div>
     </div>
@@ -648,7 +895,7 @@ const imprimirReporte = () => {
     <!-- ===================== PANEL DE REGISTRO ===================== -->
     <transition name="fade">
       <div v-if="panelAbierto" class="bg-white rounded-3xl shadow-xl border-2 border-sky-200 overflow-hidden mb-6">
-        <div class="bg-sky-50 px-6 py-4 border-b-2 border-sky-100">
+        <div class="bg-sky-50 px-4 sm:px-6 py-4 border-b-2 border-sky-100">
           <h2 class="text-xl font-black text-sky-900">➕ Registrar rollos que acaban de llegar</h2>
           <p class="text-sm text-sky-700 mt-1">
             Llena los datos de la tela una sola vez y luego agrega el peso de cada rollo.
@@ -656,9 +903,9 @@ const imprimirReporte = () => {
           </p>
         </div>
 
-        <div class="p-6 space-y-6">
+        <div class="p-4 sm:p-6 space-y-6">
           <!-- Datos comunes a todos los rollos del lote -->
-          <div class="grid md:grid-cols-2 gap-5">
+          <div class="grid md:grid-cols-2 gap-3 sm:gap-5">
             <div>
               <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-2">
                 Color de la tela <span class="text-rose-500">*</span>
@@ -699,7 +946,7 @@ const imprimirReporte = () => {
                 Costo por kilo (S/) <span class="text-slate-400 normal-case">(opcional)</span>
               </label>
               <input
-                v-model.number="form.costoPorKilo" type="number" step="0.01" min="0" placeholder="0.00"
+                v-model.number="form.costoPorKilo" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00"
                 class="w-full border-2 border-slate-200 rounded-xl px-4 h-12 font-bold text-slate-700 focus:border-sky-500 outline-none"
               />
               <p class="text-xs text-slate-500 mt-1">
@@ -718,39 +965,39 @@ const imprimirReporte = () => {
               Escribe el peso y presiona <strong>Enter</strong>. Repite por cada rollo de la balanza.
             </p>
 
-            <div class="flex flex-wrap gap-3 items-end mb-4">
-              <div>
+            <div class="flex flex-col md:flex-row md:flex-wrap gap-3 md:items-end mb-4">
+              <div class="w-full md:w-auto">
                 <label class="block text-[11px] font-bold text-slate-500 mb-1">Kilos del rollo</label>
                 <div class="flex gap-2">
                   <input
-                    ref="inputPeso" v-model.number="pesoNuevo" type="number" step="0.001" min="0"
+                    ref="inputPeso" v-model.number="pesoNuevo" type="number" inputmode="decimal" step="0.001" min="0"
                     placeholder="24.500" @keyup.enter="agregarPeso"
-                    class="w-36 border-2 border-slate-300 rounded-xl px-4 h-12 text-lg font-black text-slate-800 focus:border-emerald-500 outline-none"
+                    class="flex-1 min-w-0 md:flex-none md:w-36 border-2 border-slate-300 rounded-xl px-4 h-12 text-lg font-black text-slate-800 focus:border-emerald-500 outline-none"
                   />
                   <button
                     @click="agregarPeso"
-                    class="bg-emerald-500 hover:bg-emerald-600 text-white font-black px-5 h-12 rounded-xl shadow active:scale-95 transition-transform"
+                    class="shrink-0 bg-emerald-500 hover:bg-emerald-600 text-white font-black px-5 h-12 rounded-xl shadow active:scale-95 transition-transform"
                   >+ Agregar</button>
                 </div>
               </div>
 
               <div class="h-12 w-px bg-slate-300 hidden md:block"></div>
 
-              <div>
+              <div class="w-full md:w-auto">
                 <label class="block text-[11px] font-bold text-slate-500 mb-1">O varios del mismo peso</label>
                 <div class="flex gap-2 items-center">
                   <input
-                    v-model.number="pesoRepetido" type="number" step="0.001" min="0" placeholder="kg"
-                    class="w-24 border-2 border-slate-300 rounded-xl px-3 h-12 font-bold text-slate-800 focus:border-sky-500 outline-none"
+                    v-model.number="pesoRepetido" type="number" inputmode="decimal" step="0.001" min="0" placeholder="kg"
+                    class="flex-1 min-w-0 md:flex-none md:w-24 border-2 border-slate-300 rounded-xl px-3 h-12 font-bold text-slate-800 focus:border-sky-500 outline-none"
                   />
-                  <span class="font-black text-slate-400">×</span>
+                  <span class="font-black text-slate-400 shrink-0">×</span>
                   <input
-                    v-model.number="cantidadRepetida" type="number" min="1" placeholder="20"
-                    class="w-20 border-2 border-slate-300 rounded-xl px-3 h-12 font-bold text-slate-800 focus:border-sky-500 outline-none"
+                    v-model.number="cantidadRepetida" type="number" inputmode="numeric" min="1" placeholder="20"
+                    class="flex-1 min-w-0 md:flex-none md:w-20 border-2 border-slate-300 rounded-xl px-3 h-12 font-bold text-slate-800 focus:border-sky-500 outline-none"
                   />
                   <button
                     @click="agregarVarios"
-                    class="bg-sky-500 hover:bg-sky-600 text-white font-black px-4 h-12 rounded-xl shadow active:scale-95 transition-transform"
+                    class="shrink-0 bg-sky-500 hover:bg-sky-600 text-white font-black px-4 h-12 rounded-xl shadow active:scale-95 transition-transform"
                   >Agregar</button>
                 </div>
               </div>
@@ -799,7 +1046,7 @@ const imprimirReporte = () => {
           <div class="flex flex-wrap gap-3">
             <button
               @click="guardar" :disabled="guardando || pesos.length === 0"
-              class="flex-1 min-w-[240px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700
+              class="w-full sm:flex-1 sm:min-w-[240px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700
                      disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed
                      text-white font-black text-lg py-5 rounded-2xl shadow-lg active:scale-95 transition-all"
             >
@@ -807,7 +1054,7 @@ const imprimirReporte = () => {
             </button>
             <button
               @click="limpiarForm"
-              class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-7 py-5 rounded-2xl transition-colors"
+              class="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-7 py-4 sm:py-5 rounded-2xl transition-colors"
             >Limpiar</button>
           </div>
         </div>
@@ -820,19 +1067,34 @@ const imprimirReporte = () => {
         v-model="filtroTexto" type="text" placeholder="🔍 Buscar por código, color, tela o proveedor..."
         class="flex-1 min-w-[220px] border-2 border-slate-200 rounded-xl px-4 h-12 font-semibold text-slate-700 focus:border-sky-500 outline-none"
       />
-      <select v-model="filtroColor" class="border-2 border-slate-200 rounded-xl px-4 h-12 font-bold text-slate-700 focus:border-sky-500 outline-none">
+      <select v-model="filtroColor" class="w-full sm:w-auto border-2 border-slate-200 rounded-xl px-4 h-12 font-bold text-slate-700 focus:border-sky-500 outline-none">
         <option value="">Todos los colores</option>
         <option v-for="c in coloresEnStock" :key="c" :value="c">{{ c }}</option>
       </select>
-      <select v-model="filtroEstado" class="border-2 border-slate-200 rounded-xl px-4 h-12 font-bold text-slate-700 focus:border-sky-500 outline-none">
+      <select v-model="filtroEstado" class="w-full sm:w-auto border-2 border-slate-200 rounded-xl px-4 h-12 font-bold text-slate-700 focus:border-sky-500 outline-none">
         <option value="">Todos los estados</option>
         <option value="DISPONIBLE">Disponibles</option>
         <option value="EN_USO">Empezados</option>
         <option value="CONSUMIDO">Agotados</option>
+        <option value="CERRADO">📦 Cerrados (ya son prenda)</option>
       </select>
-      <div class="bg-sky-50 border-2 border-sky-200 rounded-xl px-4 h-12 flex items-center font-black text-sky-800">
+      <div class="w-full sm:w-auto bg-sky-50 border-2 border-sky-200 rounded-xl px-4 h-12 flex items-center justify-center sm:justify-start font-black text-sky-800">
         {{ rollosFiltrados.length }} rollos · {{ kilosFiltrados.toFixed(1) }} kg
       </div>
+
+      <!-- Los rollos cerrados viven fuera del almacén: se piden a propósito -->
+      <label
+        v-if="filtroEstado !== 'CERRADO'"
+        class="w-full sm:w-auto flex items-center justify-center sm:justify-start gap-2 bg-white border-2 border-slate-200 rounded-xl px-4 h-12 cursor-pointer hover:border-slate-300"
+        title="Rollos que se acabaron y cuya tela ya llegó al almacén convertida en prenda"
+      >
+        <input type="checkbox" v-model="verCerrados" class="w-4 h-4 accent-amber-600" />
+        <span class="text-xs font-bold text-slate-700">
+          📦 Ver cerrados
+          <span v-if="cargandoCerrados" class="text-slate-400">cargando…</span>
+          <span v-else-if="verCerrados" class="text-slate-400">({{ cerrados.length }})</span>
+        </span>
+      </label>
     </div>
 
     <!-- ===================== TARJETAS DE ROLLOS ===================== -->
@@ -848,81 +1110,134 @@ const imprimirReporte = () => {
           ? 'Usa el botón "Registrar Rollos" de arriba para ingresar la tela que llegó.'
           : 'Prueba limpiando la búsqueda o cambiando el estado.' }}
       </p>
+      <p v-if="rollos.length > 0 && !verCerrados" class="text-xs text-slate-400 font-bold mt-3">
+        Si ese rollo ya se acabó y su tela es prenda en el almacén, está <b>cerrado</b>:
+        marca <b>📦 Ver cerrados</b> arriba para encontrarlo.
+      </p>
     </div>
 
     <div v-else class="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      <div
-        v-for="r in rollosFiltrados" :key="r.id"
-        class="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-shadow overflow-hidden border-2 border-slate-100"
-      >
-        <!-- Franja del color de la tela: se identifica de lejos -->
-        <div class="h-3" :style="{ backgroundColor: hexDeColor(r.color) }"></div>
-
-        <div class="p-5">
-          <div class="flex items-start justify-between gap-2 mb-3">
-            <div>
-              <p class="font-black text-lg text-slate-800 tracking-tight">{{ r.codigo }}</p>
-              <p class="text-sm font-bold text-slate-600">{{ r.color }}</p>
-            </div>
-            <span class="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border-2 shrink-0" :class="estiloEstado(r.estado)">
-              {{ textoEstado(r.estado) }}
+      <template v-for="it in listaConGrupos" :key="it.tipo === 'grupo' ? 'g-' + it.clave : 'r-' + it.r.id">
+        <!-- Separador: deja claro por qué un rollo en 0 kg sigue en la lista -->
+        <div
+          v-if="it.tipo === 'grupo'"
+          class="sm:col-span-2 lg:col-span-3 xl:col-span-4 border-2 rounded-2xl px-4 py-3"
+          :class="it.info.clase"
+        >
+          <p class="font-black text-sm">
+            {{ it.info.titulo }}
+            <span class="font-bold opacity-70">
+              · {{ it.rollos }} {{ it.rollos === 1 ? 'rollo' : 'rollos' }}
+              <span v-if="it.kilos > 0">· {{ it.kilos.toFixed(1) }} kg</span>
             </span>
-          </div>
+          </p>
+          <p v-if="it.info.nota" class="text-[11px] font-semibold opacity-80 mt-0.5 leading-snug">
+            {{ it.info.nota }}
+          </p>
+        </div>
 
-          <p v-if="r.descripcion" class="text-xs text-slate-500 mb-3 truncate">{{ r.descripcion }}</p>
+        <div
+          v-else
+          class="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-shadow overflow-hidden border-2"
+          :class="it.r.cerradoEn ? 'border-amber-200 opacity-80' : 'border-slate-100'"
+        >
+          <!-- Franja del color de la tela: se identifica de lejos -->
+          <div class="h-3" :style="{ backgroundColor: hexDeColor(it.r.color) }"></div>
 
-          <!-- Peso: el dato más importante de la tarjeta -->
-          <div class="flex items-end gap-2 mb-2">
-            <p class="text-4xl font-black text-slate-800 leading-none">{{ Number(r.pesoActual).toFixed(2) }}</p>
-            <p class="text-lg font-bold text-slate-400 leading-none pb-0.5">kg</p>
-            <p class="text-xs text-slate-400 ml-auto pb-1">entró con {{ Number(r.pesoInicial).toFixed(2) }}</p>
-          </div>
+          <div class="p-5">
+            <div class="flex items-start justify-between gap-2 mb-3">
+              <div class="min-w-0">
+                <p class="font-black text-lg text-slate-800 tracking-tight">{{ it.r.codigo }}</p>
+                <p class="text-sm font-bold text-slate-600">{{ it.r.color }}</p>
+              </div>
+              <span class="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border-2 shrink-0" :class="estiloEstado(it.r.estado)">
+                {{ textoEstado(it.r.estado) }}
+              </span>
+            </div>
 
-          <!-- Barra: cuánto queda del rollo -->
-          <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden mb-4">
+            <!-- Por qué este rollo sigue acá aunque esté en cero -->
             <div
-              class="h-full rounded-full transition-all"
-              :class="porcentajeRestante(r) > 50 ? 'bg-emerald-500' : porcentajeRestante(r) > 15 ? 'bg-amber-500' : 'bg-rose-500'"
-              :style="{ width: porcentajeRestante(r) + '%' }"
-            ></div>
-          </div>
+              v-if="grupoDe(it.r) === 'EN_TRANSFORMACION'"
+              class="bg-violet-50 border-2 border-violet-200 rounded-xl px-3 py-2 mb-3"
+            >
+              <p class="text-[11px] font-black text-violet-800">✂️ Su tela está en el taller</p>
+              <p class="text-[10px] font-bold text-violet-600 leading-snug">
+                {{ (it.r.cortesPendientes || []).map((c: any) => c.codigo).join(' · ') }}
+                — se cierra cuando la producción entre al almacén.
+              </p>
+            </div>
 
-          <div class="text-xs text-slate-500 space-y-1 mb-4">
-            <p v-if="Number(r.costoPorKilo) > 0">
-              💵 S/ {{ Number(r.costoPorKilo).toFixed(2) }}/kg
-              <span class="text-slate-400">· valor S/ {{ (Number(r.pesoActual) * Number(r.costoPorKilo)).toFixed(2) }}</span>
-            </p>
-            <p v-if="r.proveedor">🏢 {{ r.proveedor.razonSocial }}</p>
-            <p>📅 {{ fecha(r.fechaIngreso) }}</p>
-          </div>
+            <!-- Cerrado: queda solo para consulta -->
+            <div
+              v-else-if="it.r.cerradoEn"
+              class="bg-amber-50 border-2 border-amber-200 rounded-xl px-3 py-2 mb-3"
+            >
+              <p class="text-[11px] font-black text-amber-800">📦 Cerrado el {{ fecha(it.r.cerradoEn) }}</p>
+              <p class="text-[10px] font-bold text-amber-600 leading-snug">
+                Toda su tela ya es prenda en el almacén. Se guarda para consulta: el código
+                no se reusa y de acá sale el costo de lo que produjo.
+              </p>
+            </div>
 
-          <div class="flex gap-2">
-            <button
-              @click="abrirAjuste(r)" :disabled="r.estado === 'ANULADO'"
-              class="flex-1 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 text-amber-700 font-bold text-sm py-2.5 rounded-xl border-2 border-amber-200 transition-colors"
-            >⚖️ Pesar</button>
-            <button
-              @click="verHistorial(r)"
-              class="flex-1 bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-sm py-2.5 rounded-xl border-2 border-sky-200 transition-colors"
-            >📜 Historial</button>
-            <button
-              @click="anular(r)" :disabled="r.estado === 'ANULADO'"
-              class="bg-rose-50 hover:bg-rose-100 disabled:opacity-40 text-rose-600 font-bold text-sm px-3 py-2.5 rounded-xl border-2 border-rose-200 transition-colors"
-              title="Anular (registrado por error)"
-            >🗑️</button>
+            <p v-if="it.r.descripcion" class="text-xs text-slate-500 mb-3 truncate">{{ it.r.descripcion }}</p>
+
+            <!-- Peso: el dato más importante de la tarjeta -->
+            <div class="flex items-end gap-2 mb-2">
+              <p class="text-3xl sm:text-4xl font-black text-slate-800 leading-none">{{ Number(it.r.pesoActual).toFixed(2) }}</p>
+              <p class="text-lg font-bold text-slate-400 leading-none pb-0.5">kg</p>
+              <p class="text-xs text-slate-400 ml-auto pb-1">entró con {{ Number(it.r.pesoInicial).toFixed(2) }}</p>
+            </div>
+
+            <!-- Barra: cuánto queda del rollo -->
+            <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden mb-4">
+              <div
+                class="h-full rounded-full transition-all"
+                :class="porcentajeRestante(it.r) > 50 ? 'bg-emerald-500' : porcentajeRestante(it.r) > 15 ? 'bg-amber-500' : 'bg-rose-500'"
+                :style="{ width: porcentajeRestante(it.r) + '%' }"
+              ></div>
+            </div>
+
+            <div class="text-xs text-slate-500 space-y-1 mb-4">
+              <p v-if="Number(it.r.costoPorKilo) > 0">
+                💵 S/ {{ Number(it.r.costoPorKilo).toFixed(2) }}/kg
+                <span class="text-slate-400">· valor S/ {{ (Number(it.r.pesoActual) * Number(it.r.costoPorKilo)).toFixed(2) }}</span>
+              </p>
+              <p v-if="it.r.proveedor">🏢 {{ it.r.proveedor.razonSocial }}</p>
+              <p>📅 {{ fecha(it.r.fechaIngreso) }}</p>
+            </div>
+
+            <div class="flex gap-2">
+              <button
+                @click="abrirAjuste(it.r)" :disabled="it.r.estado === 'ANULADO'"
+                class="flex-1 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 text-amber-700 font-bold text-sm py-2.5 rounded-xl border-2 border-amber-200 transition-colors"
+                :title="it.r.cerradoEn
+                  ? 'Si apareció tela de este rollo, ponle el peso real: vuelve al almacén'
+                  : 'Corregir el peso con la balanza'"
+              >{{ it.r.cerradoEn ? '⚖️ Reabrir' : '⚖️ Pesar' }}</button>
+              <button
+                @click="verHistorial(it.r)"
+                class="flex-1 bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-sm py-2.5 rounded-xl border-2 border-sky-200 transition-colors"
+              >📜 Historial</button>
+              <button
+                v-if="!it.r.cerradoEn"
+                @click="anular(it.r)" :disabled="it.r.estado === 'ANULADO'"
+                class="bg-rose-50 hover:bg-rose-100 disabled:opacity-40 text-rose-600 font-bold text-sm px-3 py-2.5 rounded-xl border-2 border-rose-200 transition-colors"
+                title="Anular (registrado por error)"
+              >🗑️</button>
+            </div>
           </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <!-- ===================== MODAL: AJUSTAR PESO ===================== -->
-    <div v-if="modalAjuste" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="modalAjuste = null">
-      <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
-        <div class="bg-amber-500 px-6 py-5 text-white">
+    <div v-if="modalAjuste" class="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" @click.self="modalAjuste = null">
+      <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
+        <div class="bg-amber-500 px-4 sm:px-6 py-4 sm:py-5 text-white">
           <h3 class="text-2xl font-black">⚖️ Pesar de nuevo</h3>
           <p class="text-amber-50 text-sm mt-1">{{ modalAjuste.codigo }} — {{ modalAjuste.color }}</p>
         </div>
-        <div class="p-6 space-y-5">
+        <div class="p-4 sm:p-6 space-y-5">
           <p class="text-sm text-slate-600 bg-slate-50 rounded-xl p-4 border border-slate-200">
             El sistema dice que este rollo tiene
             <strong>{{ Number(modalAjuste.pesoActual).toFixed(3) }} kg</strong>.
@@ -933,7 +1248,7 @@ const imprimirReporte = () => {
           <div>
             <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-2">Peso real en balanza (kg)</label>
             <input
-              v-model.number="pesoReal" type="number" step="0.001" min="0"
+              v-model.number="pesoReal" type="number" inputmode="decimal" step="0.001" min="0"
               class="w-full border-2 border-amber-300 rounded-xl px-4 h-14 text-2xl font-black text-slate-800 focus:border-amber-500 outline-none"
             />
           </div>
@@ -951,16 +1266,16 @@ const imprimirReporte = () => {
               @click="confirmarAjuste" :disabled="guardando"
               class="flex-1 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white font-black text-lg py-4 rounded-2xl shadow active:scale-95 transition-all"
             >{{ guardando ? 'Guardando...' : 'Confirmar peso' }}</button>
-            <button @click="modalAjuste = null" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-6 rounded-2xl">Cancelar</button>
+            <button @click="modalAjuste = null" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 sm:px-6 rounded-2xl">Cancelar</button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- ===================== MODAL: HISTORIAL ===================== -->
-    <div v-if="modalHistorial" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="modalHistorial = null">
-      <div class="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[88vh] flex flex-col">
-        <div class="bg-sky-600 px-6 py-5 text-white flex items-start justify-between">
+    <div v-if="modalHistorial" class="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" @click.self="modalHistorial = null">
+      <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[92vh] sm:max-h-[88vh] flex flex-col">
+        <div class="bg-sky-600 px-4 sm:px-6 py-4 sm:py-5 text-white flex items-start justify-between">
           <div>
             <h3 class="text-2xl font-black">📜 {{ modalHistorial.codigo }}</h3>
             <p class="text-sky-100 text-sm mt-1">
@@ -968,10 +1283,10 @@ const imprimirReporte = () => {
               hoy tiene {{ Number(modalHistorial.pesoActual).toFixed(3) }} kg
             </p>
           </div>
-          <button @click="modalHistorial = null" class="text-white/80 hover:text-white text-3xl leading-none">&times;</button>
+          <button @click="modalHistorial = null" class="text-white/80 hover:text-white text-2xl sm:text-3xl leading-none">&times;</button>
         </div>
 
-        <div class="p-6 overflow-y-auto space-y-6">
+        <div class="p-4 sm:p-6 overflow-y-auto space-y-6">
           <!-- Cada kilo que entró y salió -->
           <div>
             <p class="text-xs font-black uppercase tracking-wider text-slate-500 mb-3">Movimientos de kilos</p>
@@ -1019,15 +1334,15 @@ const imprimirReporte = () => {
          Qué rollos hay, de qué color, de qué peso, de quién vinieron y
          cuántos kilos ya se fueron al corte. Se puede imprimir o bajar a Excel.
          ===================================================================== -->
-    <div v-if="mostrarReporte" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-[100] p-4 overflow-y-auto">
-      <div class="bg-white rounded-3xl shadow-2xl w-full max-w-6xl my-4 overflow-hidden">
+    <div v-if="mostrarReporte" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-[100] p-0 sm:p-4 overflow-y-auto">
+      <div class="bg-white rounded-none sm:rounded-3xl shadow-2xl w-full max-w-6xl my-0 sm:my-4 min-h-full sm:min-h-0 overflow-hidden">
 
         <div class="bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-700 p-5 flex justify-between items-center text-white">
           <div>
             <h3 class="text-xl font-black">📄 Reporte del Almacén de Rollos</h3>
             <p class="text-xs text-sky-100 font-medium">Todos los rollos registrados, sus kilos y lo que ya se cortó</p>
           </div>
-          <button @click="mostrarReporte = false" class="text-white/70 hover:text-white text-3xl leading-none">&times;</button>
+          <button @click="mostrarReporte = false" class="text-white/70 hover:text-white text-2xl sm:text-3xl leading-none">&times;</button>
         </div>
 
         <div class="p-5 space-y-5">
@@ -1076,6 +1391,14 @@ const imprimirReporte = () => {
                 <span class="text-xs font-bold text-slate-700">Incluir rollos anulados</span>
                 <span v-if="cargandoAnulados" class="text-[10px] text-slate-400 font-bold">cargando…</span>
               </label>
+              <label
+                class="flex items-center gap-2 bg-white border-2 border-slate-200 rounded-xl px-3 py-2.5 cursor-pointer"
+                title="Rollos que se acabaron y cuya tela ya llegó al almacén convertida en prenda"
+              >
+                <input type="checkbox" v-model="repIncluirCerrados" class="w-4 h-4 accent-amber-600">
+                <span class="text-xs font-bold text-slate-700">📦 Incluir rollos cerrados</span>
+                <span v-if="cargandoCerrados" class="text-[10px] text-slate-400 font-bold">cargando…</span>
+              </label>
               <button @click="limpiarFiltrosReporte" class="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs">
                 Limpiar filtros
               </button>
@@ -1086,22 +1409,22 @@ const imprimirReporte = () => {
           <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <div class="bg-white border-l-4 border-slate-400 shadow-sm rounded-2xl p-4">
               <p class="text-[10px] font-black text-slate-500 uppercase">Rollos</p>
-              <p class="text-3xl font-black text-slate-700">{{ totalesReporte.rollos }}</p>
+              <p class="text-2xl sm:text-3xl font-black text-slate-700">{{ totalesReporte.rollos }}</p>
               <p class="text-[10px] text-slate-500 font-bold">{{ totalesReporte.colores }} colores</p>
             </div>
             <div class="bg-white border-l-4 border-sky-500 shadow-sm rounded-2xl p-4">
               <p class="text-[10px] font-black text-slate-500 uppercase">Ingresaron</p>
-              <p class="text-3xl font-black text-sky-700">{{ totalesReporte.ingresados.toFixed(2) }}</p>
+              <p class="text-2xl sm:text-3xl font-black text-sky-700">{{ totalesReporte.ingresados.toFixed(2) }}</p>
               <p class="text-[10px] text-slate-500 font-bold">kilos</p>
             </div>
             <div class="bg-white border-l-4 border-emerald-500 shadow-sm rounded-2xl p-4">
               <p class="text-[10px] font-black text-slate-500 uppercase">Quedan hoy</p>
-              <p class="text-3xl font-black text-emerald-700">{{ totalesReporte.disponibles.toFixed(2) }}</p>
+              <p class="text-2xl sm:text-3xl font-black text-emerald-700">{{ totalesReporte.disponibles.toFixed(2) }}</p>
               <p class="text-[10px] text-slate-500 font-bold">kilos en el almacén</p>
             </div>
             <div class="bg-white border-l-4 border-violet-500 shadow-sm rounded-2xl p-4">
               <p class="text-[10px] font-black text-slate-500 uppercase">Se cortaron</p>
-              <p class="text-3xl font-black text-violet-700">{{ totalesReporte.consumidos.toFixed(2) }}</p>
+              <p class="text-2xl sm:text-3xl font-black text-violet-700">{{ totalesReporte.consumidos.toFixed(2) }}</p>
               <p class="text-[10px] text-slate-500 font-bold">{{ totalesReporte.pctConsumido.toFixed(1) }}% de lo que entró</p>
             </div>
             <div class="bg-white border-l-4 border-amber-500 shadow-sm rounded-2xl p-4">
@@ -1120,6 +1443,14 @@ const imprimirReporte = () => {
             </span>
             <span class="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 border-2 border-slate-300 font-black text-sm">
               ⚪ {{ totalesReporte.agotados }} agotados
+            </span>
+            <span v-if="totalesReporte.enTransformacion" class="px-4 py-2 rounded-xl bg-violet-100 text-violet-800 border-2 border-violet-300 font-black text-sm"
+                  title="Sin kilos, pero su tela está en el taller: si se anula el corte, vuelve al rollo">
+              ✂️ {{ totalesReporte.enTransformacion }} en el taller
+            </span>
+            <span v-if="totalesReporte.cerrados" class="px-4 py-2 rounded-xl bg-amber-100 text-amber-800 border-2 border-amber-300 font-black text-sm"
+                  title="Su tela ya llegó al almacén convertida en prenda">
+              📦 {{ totalesReporte.cerrados }} cerrados
             </span>
             <span v-if="totalesReporte.anulados" class="px-4 py-2 rounded-xl bg-rose-100 text-rose-800 border-2 border-rose-300 font-black text-sm">
               🔴 {{ totalesReporte.anulados }} anulados
@@ -1162,7 +1493,8 @@ const imprimirReporte = () => {
 
             <div class="bg-white border-2 border-slate-100 rounded-2xl p-4">
               <p class="text-[11px] font-black text-slate-600 uppercase tracking-wider mb-3">🚚 Por proveedor</p>
-              <table class="w-full text-xs">
+              <div class="overflow-x-auto">
+              <table class="w-full text-xs min-w-[320px]">
                 <thead>
                   <tr class="text-slate-500 uppercase text-[10px]">
                     <th class="text-left pb-2">Proveedor</th>
@@ -1185,6 +1517,7 @@ const imprimirReporte = () => {
                   </tr>
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
 
@@ -1210,35 +1543,81 @@ const imprimirReporte = () => {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                   <tr v-if="filasReporte.length === 0">
-                    <td colspan="9" class="p-8 text-center text-slate-400 font-bold">
+                    <td colspan="9" class="p-5 sm:p-8 text-center text-slate-400 font-bold">
                       No hay rollos con esos filtros.
                     </td>
                   </tr>
-                  <tr v-for="f in filasReporte" :key="f.id" class="hover:bg-sky-50/60 even:bg-slate-50/50">
-                    <td class="p-3 font-mono font-black text-slate-700">{{ f.codigo }}</td>
-                    <td class="p-3 text-xs text-slate-500 font-bold whitespace-nowrap">{{ fecha(f.fechaIngreso) }}</td>
-                    <td class="p-3">
-                      <span class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                        <span class="w-3 h-3 rounded-full border border-white shadow" :style="{ backgroundColor: hexDeColor(f.color) }"></span>
-                        {{ f.color }}
-                      </span>
-                      <p v-if="f.descripcion" class="text-[10px] text-slate-400 font-medium">{{ f.descripcion }}</p>
-                    </td>
-                    <td class="p-3 text-xs font-bold text-slate-600">{{ f.proveedorNombre || '—' }}</td>
-                    <td class="p-3 text-right font-bold text-slate-500">{{ f.kgInicial.toFixed(3) }}</td>
-                    <td class="p-3 text-right font-black" :class="f.kgActual > 0 ? 'text-emerald-700' : 'text-slate-300'">
-                      {{ f.kgActual.toFixed(3) }}
-                    </td>
-                    <td class="p-3 text-right font-bold" :class="f.kgUsado > 0 ? 'text-violet-700' : 'text-slate-300'">
-                      {{ f.kgUsado.toFixed(3) }}
-                    </td>
-                    <td class="p-3 text-center">
-                      <span class="px-2 py-0.5 rounded-lg border text-[10px] font-black" :class="estiloEstado(f.estado)">
-                        {{ textoEstado(f.estado) }}
-                      </span>
-                    </td>
-                    <td class="p-3 text-right font-black text-amber-700">{{ f.valor > 0 ? 'S/ ' + f.valor.toFixed(2) : '—' }}</td>
-                  </tr>
+
+                  <!-- Clasificado: título de grupo, subtotal del color y los rollos -->
+                  <template
+                    v-for="it in filasClasificadas"
+                    :key="it.tipo === 'fila' ? 'f-' + it.f.id : it.tipo + '-' + (it.clave || it.color)"
+                  >
+                    <tr v-if="it.tipo === 'grupo'" :class="it.info.clase">
+                      <td colspan="9" class="p-3 border-y-2">
+                        <p class="font-black text-xs uppercase tracking-wider">
+                          {{ it.info.titulo }}
+                          <span class="font-bold opacity-70 normal-case tracking-normal">
+                            · {{ it.rollos }} {{ it.rollos === 1 ? 'rollo' : 'rollos' }}
+                            · {{ it.ingresados.toFixed(3) }} kg ingresados
+                            · {{ it.kilos.toFixed(3) }} kg hoy
+                          </span>
+                        </p>
+                        <p v-if="it.info.nota" class="text-[10px] font-semibold opacity-80 leading-snug mt-0.5">
+                          {{ it.info.nota }}
+                        </p>
+                      </td>
+                    </tr>
+
+                    <tr v-else-if="it.tipo === 'color'" class="bg-slate-100">
+                      <td colspan="4" class="p-2.5">
+                        <span class="inline-flex items-center gap-2 text-xs font-black text-slate-700">
+                          <span class="w-3.5 h-3.5 rounded-md border border-slate-300" :style="{ backgroundColor: hexDeColor(it.color) }"></span>
+                          {{ it.color || 'Sin color' }}
+                          <span class="font-bold text-slate-500">
+                            · {{ it.rollos }} {{ it.rollos === 1 ? 'rollo' : 'rollos' }}
+                          </span>
+                        </span>
+                      </td>
+                      <td class="p-2.5 text-right font-black text-slate-600">{{ it.ingresados.toFixed(3) }}</td>
+                      <td class="p-2.5 text-right font-black text-slate-600">{{ it.kilos.toFixed(3) }}</td>
+                      <td colspan="3" class="p-2.5 text-right font-black text-slate-500">
+                        <span v-if="it.valor > 0">S/ {{ it.valor.toFixed(2) }}</span>
+                      </td>
+                    </tr>
+
+                    <tr v-else class="hover:bg-sky-50/60">
+                      <td class="p-3 font-mono font-black text-slate-700">{{ it.f.codigo }}</td>
+                      <td class="p-3 text-xs text-slate-500 font-bold whitespace-nowrap">{{ fecha(it.f.fechaIngreso) }}</td>
+                      <td class="p-3">
+                        <span class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                          <span class="w-3 h-3 rounded-full border border-white shadow" :style="{ backgroundColor: hexDeColor(it.f.color) }"></span>
+                          {{ it.f.color }}
+                        </span>
+                        <p v-if="it.f.descripcion" class="text-[10px] text-slate-400 font-medium">{{ it.f.descripcion }}</p>
+                      </td>
+                      <td class="p-3 text-xs font-bold text-slate-600">{{ it.f.proveedorNombre || '—' }}</td>
+                      <td class="p-3 text-right font-bold text-slate-500">{{ it.f.kgInicial.toFixed(3) }}</td>
+                      <td class="p-3 text-right font-black" :class="it.f.kgActual > 0 ? 'text-emerald-700' : 'text-slate-300'">
+                        {{ it.f.kgActual.toFixed(3) }}
+                      </td>
+                      <td class="p-3 text-right font-bold" :class="it.f.kgUsado > 0 ? 'text-violet-700' : 'text-slate-300'">
+                        {{ it.f.kgUsado.toFixed(3) }}
+                      </td>
+                      <td class="p-3 text-center">
+                        <span class="px-2 py-0.5 rounded-lg border text-[10px] font-black" :class="estiloEstado(it.f.estado)">
+                          {{ textoEstado(it.f.estado) }}
+                        </span>
+                        <p v-if="it.f.cortesTexto" class="text-[10px] font-bold text-violet-600 mt-0.5">
+                          ✂️ {{ it.f.cortesTexto }}
+                        </p>
+                        <p v-else-if="it.f.cerradoEn" class="text-[10px] font-bold text-amber-600 mt-0.5">
+                          📦 {{ fecha(it.f.cerradoEn) }}
+                        </p>
+                      </td>
+                      <td class="p-3 text-right font-black text-amber-700">{{ it.f.valor > 0 ? 'S/ ' + it.f.valor.toFixed(2) : '—' }}</td>
+                    </tr>
+                  </template>
                 </tbody>
               </table>
             </div>
@@ -1248,8 +1627,14 @@ const imprimirReporte = () => {
             <p class="text-[11px] text-sky-900 leading-relaxed">
               ℹ️ <b>Peso hoy</b> son los kilos que quedan en el rollo ahora mismo. Los <b>usados</b>
               salieron al corte: cada kilo está detallado en <b>✂️ Transformación</b>, con el corte
-              y las prendas en las que se convirtió. Los rollos <b>anulados</b> son errores de
-              registro y no cuentan, salvo que los pidas con la casilla de arriba.
+              y las prendas en las que se convirtió.
+              <br><br>
+              Un rollo en <b>0 kg no está terminado</b>: su tela anda por el taller y si el corte se
+              anula vuelve al rollo. Por eso sale al final, en <b>✂️ en el taller</b>. Cuando esa
+              producción entra al almacén, el rollo se <b>cierra</b> y ya no aparece en este reporte
+              —no se borra nunca: su código no se reusa y de él sale el costo de las prendas que
+              produjo—. Para verlos, marca <b>📦 Incluir rollos cerrados</b>. Los <b>anulados</b>
+              son errores de registro y tampoco cuentan salvo que los pidas.
             </p>
           </div>
         </div>

@@ -24,7 +24,26 @@ const leerBorrador = (): any => {
   } catch { return null; }
 };
 
-export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (carrito: any[]) => void) {
+/**
+ * VARIANTE DE LAS PRENDAS QUE SE MANEJAN SIN COLOR NI TALLA.
+ * Es la misma que usa la mercadería comprada en el backend, así el inventario,
+ * el kardex y los traslados hablan un solo idioma.
+ */
+export const COLOR_GENERAL = 'GENERAL';
+export const TALLA_UNICA = 'UNICA';
+
+/**
+ * @param inventarioConSKURef   lo que el almacén REGISTRA hoy
+ * @param emitirSincronizacionCb aviso al componente cuando cambia el carrito
+ * @param productosRef          catálogo completo de prendas (opcional). Si se
+ *   pasa, la caja también puede vender prendas que están creadas en Productos
+ *   pero que NUNCA tuvieron un ingreso al almacén.
+ */
+export function useVentas(
+  inventarioConSKURef: any,
+  emitirSincronizacionCb: (carrito: any[]) => void,
+  productosRef?: any
+) {
   const bodegaSeleccionada = ref<number | ''>(leerBodegaGuardada());
 
   // Cada vez que cambie, la guardamos
@@ -173,6 +192,97 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
   /** La clave de una línea, tolerando borradores viejos que no la traían. */
   const claveDe = (linea: any) => linea.clave || claveLinea(linea.productoId, linea.talla);
 
+  /* ──────────────────────────────────────────────────────────────
+     🆕 PRENDAS QUE NUNCA ENTRARON AL ALMACÉN
+
+     Se crea la prenda en Productos, se empieza a vender en el mostrador y el
+     ingreso al almacén se registra después (o nunca, porque llegó directo del
+     taller a la tienda). Antes esa prenda NO EXISTÍA para la caja: la grilla
+     se arma con el inventario, y sin una fila de inventario no había nada que
+     tocar. El cajero la tenía delante y no podía cobrarla.
+
+     Ahora la caja arma su lista con el inventario MÁS una fila en cero por
+     cada prenda del catálogo que no tiene nada registrado en esta bodega.
+     Se vende normal, el stock queda en negativo —que es el aviso de que falta
+     el ingreso— y el conteo físico lo endereza.
+
+     Qué variante se usa:
+       · si la prenda ya se conoce en otra bodega, se respetan sus colores y
+         tallas (así no se inventan nombres nuevos);
+       · si no se conoce en ninguna, entra como GENERAL / UNICA, igual que la
+         mercadería comprada.
+     ────────────────────────────────────────────────────────────── */
+  const filasSinRegistrar = computed(() => {
+    const bodega = Number(bodegaSeleccionada.value);
+    const catalogo = productosRef?.value || [];
+    if (!bodega || catalogo.length === 0) return [];
+
+    const inventario = inventarioConSKURef.value || [];
+    const idDe = (i: any) => Number(i.productoId || i.producto?.id);
+
+    // Una sola pasada por el inventario. Antes esto recorría el inventario
+    // completo una vez por prenda del catálogo: con mil prendas y miles de
+    // filas, la caja se arrastraba cada vez que se cambiaba de bodega.
+    const yaEnLaBodega = new Set<number>();
+    const variantesPorPrenda = new Map<number, { color: string; talla: string }[]>();
+    const vistas = new Set<string>();
+    for (const i of inventario) {
+      const id = idDe(i);
+      if (!id) continue;
+      if (Number(i.bodegaId) === bodega) yaEnLaBodega.add(id);
+      const clave = `${id}|${i.color}|${i.talla}`;
+      if (vistas.has(clave)) continue;
+      vistas.add(clave);
+      const lista = variantesPorPrenda.get(id) || [];
+      lista.push({ color: String(i.color), talla: String(i.talla) });
+      variantesPorPrenda.set(id, lista);
+    }
+
+    const filas: any[] = [];
+    for (const producto of catalogo) {
+      const id = Number(producto?.id);
+      if (!id || yaEnLaBodega.has(id)) continue;
+
+      // Si la prenda ya se conoce en otra bodega, repetimos sus mismos colores
+      // y tallas en vez de inventar nombres nuevos.
+      const combos = variantesPorPrenda.get(id) || [
+        { color: COLOR_GENERAL, talla: TALLA_UNICA },
+      ];
+
+      for (const c of combos) {
+        filas.push({
+          id: `sin-${id}-${c.color}-${c.talla}`,
+          productoId: id,
+          bodegaId: bodega,
+          color: c.color,
+          talla: c.talla,
+          stock: 0,
+          producto,
+          // La marca que la pantalla usa para decir "sin ingreso registrado".
+          sinRegistrar: true,
+          skuCalculado: `PRD${id}-${String(c.color).substring(0, 3).toUpperCase()}-${c.talla}`,
+        });
+      }
+    }
+    return filas;
+  });
+
+  /** Lo que la caja puede vender: lo registrado + lo que nunca entró. */
+  const inventarioVendible = computed(() => [
+    ...(inventarioConSKURef.value || []),
+    ...filasSinRegistrar.value,
+  ]);
+
+  /** true si de esa prenda no hay NADA registrado en esta bodega. */
+  const sinIngresoRegistrado = (productoId: any): boolean => {
+    const bodega = Number(bodegaSeleccionada.value);
+    return !(inventarioConSKURef.value || []).some(
+      (i: any) =>
+        Number(i.bodegaId) === bodega &&
+        Number(i.productoId || i.producto?.id) === Number(productoId)
+    );
+  };
+
   /**
    * Variantes reales que puede surtir esa línea en la bodega de la caja:
    * los colores de esa talla, o TODAS las tallas y colores de la prenda si la
@@ -180,7 +290,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
    */
   const variantesDeTalla = (productoId: any, talla: any): any[] => {
     const sinTalla = normalizarTalla(talla) === '';
-    return inventarioConSKURef.value.filter(
+    return inventarioVendible.value.filter(
       (i: any) =>
         Number(i.bodegaId) === Number(bodegaSeleccionada.value) &&
         Number(i.productoId || i.producto?.id) === Number(productoId) &&
@@ -214,6 +324,9 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
       cantidad: 1,
       stockMaximo: datos.stockMaximo,
       stockForzado: datos.stockMaximo <= 0,
+      // true cuando la prenda no tiene NINGÚN ingreso registrado en la bodega:
+      // no es un desfase de stock, es que el almacén todavía no la conoce.
+      sinRegistrar: sinIngresoRegistrado(datos.productoId),
       // Lista de precio de esta línea. Nace con la de la venta y se cambia sola.
       lista: tipoVenta.value,
       // true cuando el precio se escribió a mano: la pantalla lo muestra para
@@ -227,7 +340,13 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     linea.precioUnitario = precioDeLista(linea);
 
     const comoSeLlama = talla ? `${datos.nombre} (${talla})` : datos.nombre;
-    if (linea.stockForzado) {
+    if (linea.sinRegistrar) {
+      // Mensaje distinto a propósito: acá no falta stock, falta el ingreso.
+      avisar(
+        `${comoSeLlama} todavía no tiene ingreso registrado en el almacén. ` +
+        'Se vende igual: quedará en negativo y se cuadra en el conteo físico.'
+      );
+    } else if (linea.stockForzado) {
       avisar(`${comoSeLlama} quedó sin stock en el sistema. Revisar inventario.`);
     }
     if (linea.precioUnitario <= 0) {
@@ -424,7 +543,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     // inventario. coincideConPrenda reconoce la etiqueta de producción (formato
     // completo y compacto) y el código corto de la mercadería comprada.
     const bodega = Number(bodegaSeleccionada.value);
-    const prendaLocal = inventarioConSKURef.value.find(
+    const prendaLocal = inventarioVendible.value.find(
       (i: any) => Number(i.bodegaId) === bodega && coincideConPrenda(sku, i)
     );
 
@@ -439,9 +558,14 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
       // carrito agrupa todos los colores de esa talla.
       stockMaximo = stockDeTalla(productoId, talla);
     } else {
-      // 🚀 PLAN B (backend): no es del sistema → puede ser un QR de proveedor
+      // 🚀 PLAN B (backend): no está en la grilla → etiqueta de una prenda que
+      // el almacén de esta bodega no registra, o el código corto de una
+      // mercadería. El servidor ya NO exige stock: si la prenda existe, la
+      // devuelve en cero y se vende igual.
       try {
-        const res = await api.get(`/ventas/escanear/${sku}`);
+        const res = await api.get(`/ventas/escanear/${sku}`, {
+          params: { bodegaId: bodega || undefined },
+        });
         const dataBackend = res.data;
         productoId = Number(dataBackend.productoId);
         nombre = dataBackend.nombre;
@@ -449,7 +573,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
         talla = dataBackend.talla;
         stockMaximo = Number(dataBackend.stockDisponible);
       } catch (error) {
-        alert(`El producto escaneado o escrito (${sku}) no existe o no cuenta con stock físico disponible.`);
+        alert(`El código escaneado o escrito (${sku}) no existe en el sistema.`);
         codigoEscaneado.value = '';
         return;
       }
@@ -470,7 +594,7 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
       cambiarCantidad(itemEnCarrito, itemEnCarrito.cantidad + 1);
     } else {
       // Buscamos el producto local para leer sus dos listas de precio
-      const referenciaPrenda = inventarioConSKURef.value.find(
+      const referenciaPrenda = inventarioVendible.value.find(
         (i: any) => Number(i.productoId || i.producto?.id) === productoId
       );
 
@@ -554,6 +678,8 @@ export function useVentas(inventarioConSKURef: any, emitirSincronizacionCb: (car
     cambiarCantidad, borradorRecuperado, limpiarBorrador,
     avisos, avisar, descartarAviso, construirDetalles,
     // Precio y lista por línea + talla pendiente de definir
-    cambiarPrecio, cambiarListaLinea, listaDeLinea, esSinTalla, stockDeTalla
+    cambiarPrecio, cambiarListaLinea, listaDeLinea, esSinTalla, stockDeTalla,
+    // Lo que la caja puede vender, incluidas las prendas sin ingreso al almacén
+    inventarioVendible, sinIngresoRegistrado
   };
 }

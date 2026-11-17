@@ -441,8 +441,8 @@ onMounted(cargarTodo);
 
 <template>
   <div class="space-y-6">
-    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-      <h2 class="text-3xl font-bold text-gray-800">📋 Conteo de Inventario</h2>
+    <div class="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
+      <h2 class="text-2xl sm:text-3xl font-bold text-gray-800">📋 Conteo de Inventario</h2>
       <p class="text-gray-500 mt-1">Cuenta físicamente las prendas de cada almacén y corrige el stock del sistema. Cada cambio queda registrado en el kardex. (Solo administrador.)</p>
     </div>
 
@@ -512,7 +512,7 @@ onMounted(cargarTodo);
           </select>
           <input v-model="formNuevo.talla" placeholder="Talla" class="border border-gray-300 rounded-lg p-2 text-sm uppercase">
           <div class="flex gap-2">
-            <input v-model.number="formNuevo.cantidad" type="number" min="1" class="w-16 border border-gray-300 rounded-lg p-2 text-sm text-center font-bold">
+            <input v-model.number="formNuevo.cantidad" type="number" inputmode="numeric" min="1" class="w-16 border border-gray-300 rounded-lg p-2 text-sm text-center font-bold">
             <button @click="agregarVariante" class="flex-1 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black px-3">Agregar</button>
           </div>
         </div>
@@ -561,6 +561,7 @@ onMounted(cargarTodo);
               </div>
             </div>
 
+            <p class="sm:hidden text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">👉 Desliza la tabla para ver todas las tallas</p>
             <div class="overflow-x-auto rounded-xl border-2 border-gray-200">
               <table class="w-full text-sm border-collapse">
                 <thead>
@@ -588,7 +589,7 @@ onMounted(cargarTodo);
                       <template v-if="casillaDe(m, c, t)">
                         <input
                           v-model.number="conteos[casillaDe(m, c, t).id]"
-                          type="number" min="0"
+                          type="number" inputmode="numeric" min="0"
                           class="w-full border-2 rounded-xl h-11 text-center text-lg font-black outline-none"
                           :class="contadoDe(m, c, t) === sistemaDe(m, c, t)
                             ? 'border-gray-200 text-gray-700 focus:border-blue-500'
@@ -649,14 +650,17 @@ onMounted(cargarTodo);
         </div>
 
         <!-- Footer -->
-        <div class="p-4 border-t border-gray-100 flex flex-wrap items-center gap-3">
-          <span class="text-sm font-bold text-gray-600 mr-auto">
+        <div
+          class="p-4 pb-seguro sm:pb-4 border-t border-gray-100 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3
+                 sticky bottom-0 z-20 bg-white/95 backdrop-blur sm:static sm:bg-white sm:backdrop-blur-none"
+        >
+          <span class="text-sm font-bold text-gray-600 sm:mr-auto">
             {{ pendientes }} cambio(s) pendiente(s)
           </span>
           <button
             @click="guardar"
             :disabled="!pendientes || guardando"
-            class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-40 flex items-center gap-2"
+            class="w-full sm:w-auto bg-blue-600 text-white px-5 sm:px-8 py-4 sm:py-3 rounded-xl font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-40 flex items-center justify-center gap-2"
           >
             {{ guardando ? 'Guardando...' : `💾 Guardar ajustes (${pendientes})` }}
           </button>
@@ -670,8 +674,8 @@ onMounted(cargarTodo);
     <!-- ====================================================================
          REPORTE DEL CONTEO · la misma matriz, para imprimir o bajar a Excel
          ==================================================================== -->
-    <div v-if="mostrarReporteConteo" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-[100] p-4 overflow-y-auto">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl my-4 overflow-hidden">
+    <div v-if="mostrarReporteConteo" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-[100] p-0 sm:p-4 overflow-y-auto">
+      <div class="bg-white rounded-none sm:rounded-2xl shadow-2xl w-full max-w-5xl my-0 sm:my-4 min-h-full sm:min-h-0 overflow-hidden">
 
         <div class="bg-gradient-to-r from-slate-800 to-gray-900 p-5 flex justify-between items-center text-white">
           <div>
@@ -680,7 +684,7 @@ onMounted(cargarTodo);
               {{ nombreBodega }} · {{ productoSel ? nombreProducto(productoSel) : 'todas las prendas' }}
             </p>
           </div>
-          <button @click="mostrarReporteConteo = false" class="text-white/70 hover:text-white text-3xl leading-none">&times;</button>
+          <button @click="mostrarReporteConteo = false" class="text-white/70 hover:text-white text-2xl sm:text-3xl leading-none">&times;</button>
         </div>
 
         <div class="p-5 space-y-4">

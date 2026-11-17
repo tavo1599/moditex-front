@@ -16,17 +16,23 @@ const menuAbierto = ref(false)
 watch(() => route.path, () => { menuAbierto.value = false })
 
 // Cada ítem declara qué roles pueden verlo y a qué sección pertenece.
+//
+// El VENDEDOR (rol simple) ve solo lo operativo del mostrador:
+//   Caja Rápida · Punto de Venta · Almacén de terminados · Etiquetas ·
+//   Conteo de Inventario · Reportes (de ventas) · Cierre de Caja · Devoluciones
+// Nada de gerencia (Dashboard, Cobranzas, Compras, Producción, Usuarios, Web…).
+// El menú es solo lo visual: el router y el backend aplican la misma regla.
 // seccion 'produccion' = ERP; seccion 'web' = gestión de la tienda online.
 // VENDEDOR ve solo lo operativo de venta; ADMIN ve todo.
 const TODOS = ['ADMIN', 'VENDEDOR'];
 const menuItems = [
   // --- PRODUCCIÓN (ERP) ---
-  { name: 'Dashboard', path: '/', icon: '📊', roles: TODOS, seccion: 'produccion' },
+  { name: 'Dashboard', path: '/', icon: '📊', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Almacén', path: '/almacen', icon: '📦', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Ingeniería', path: '/ingenieria', icon: '📐', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Producción', path: '/produccion', icon: '🏭', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Recepción Taller', path: '/recepcion', icon: '📥', roles: ['ADMIN'], seccion: 'produccion' },
-  { name: 'Etiquetas', path: '/etiquetas', icon: '🏷️', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Etiquetas', path: '/etiquetas', icon: '🏷️', roles: TODOS, seccion: 'produccion' },
   { name: 'Despachos', path: '/despachos', icon: '🚚', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Talleres', path: '/talleres', icon: '🧵', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Productos', path: '/productos', icon: '👕', roles: ['ADMIN'], seccion: 'produccion' },
@@ -38,13 +44,13 @@ const menuItems = [
   { name: 'Transformación', path: '/transformacion', icon: '✂️', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Mercadería Comprada', path: '/mercaderia', icon: '📦', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Almacen de terminados', path: '/almacen-terminados', icon: '🏬', roles: TODOS, seccion: 'produccion' },
-  { name: 'Conteo de Inventario', path: '/conteo-inventario', icon: '📋', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Conteo de Inventario', path: '/conteo-inventario', icon: '📋', roles: TODOS, seccion: 'produccion' },
   { name: 'Traslados', path: '/traslados', icon: '🔄', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Caja Rápida', path: '/caja', icon: '⚡', roles: TODOS, seccion: 'produccion' },
   { name: 'Punto de Venta', path: '/punto-venta', icon: '🛒', roles: TODOS, seccion: 'produccion' },
   { name: 'Config. Colores', path: '/config-colores', icon: '🎨', roles: ['ADMIN'], seccion: 'produccion' },
-  { name: 'Reportes', path: '/reportes', icon: '📈', roles: ['ADMIN'], seccion: 'produccion' },
-  { name: 'Cobranzas', path: '/cobranzas', icon: '💳', roles: TODOS, seccion: 'produccion' },
+  { name: 'Reportes', path: '/reportes', icon: '📈', roles: TODOS, seccion: 'produccion' },
+  { name: 'Cobranzas', path: '/cobranzas', icon: '💳', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Devoluciones', path: '/devoluciones', icon: '🔄', roles: TODOS, seccion: 'produccion' },
   { name: 'Cierre de Caja', path: '/cierre-caja', icon: '🧾', roles: TODOS, seccion: 'produccion' },
   { name: 'Usuarios', path: '/usuarios', icon: '👥', roles: ['ADMIN'], seccion: 'produccion' },
@@ -84,7 +90,7 @@ const cerrarSesion = () => {
     <!-- Botón hamburguesa: solo visible en móvil -->
     <button
       @click="menuAbierto = true"
-      class="md:hidden fixed top-4 left-4 z-50 bg-gray-900 text-white w-11 h-11 rounded-lg shadow-lg flex items-center justify-center text-xl"
+      class="lg:hidden fixed top-4 left-4 z-50 bg-gray-900 text-white w-11 h-11 rounded-lg shadow-lg flex items-center justify-center text-xl"
       aria-label="Abrir menú"
     >
       ☰
@@ -94,7 +100,7 @@ const cerrarSesion = () => {
     <button
       v-if="ui.sidebarColapsado"
       @click="ui.setColapsado(false)"
-      class="hidden md:flex fixed top-4 left-4 z-50 bg-gray-900 text-white w-11 h-11 rounded-lg shadow-lg items-center justify-center text-xl hover:bg-gray-800"
+      class="hidden lg:flex fixed top-4 left-4 z-50 bg-gray-900 text-white w-11 h-11 rounded-lg shadow-lg items-center justify-center text-xl hover:bg-gray-800"
       aria-label="Mostrar menú"
     >
       ☰
@@ -104,15 +110,15 @@ const cerrarSesion = () => {
     <div
       v-if="menuAbierto"
       @click="menuAbierto = false"
-      class="md:hidden fixed inset-0 bg-black/50 z-40"
+      class="lg:hidden fixed inset-0 bg-black/50 z-40"
     ></div>
 
   <aside
     class="w-64 bg-gray-900 text-white flex flex-col shadow-2xl h-screen
-           fixed top-0 left-0 z-50 transition-transform duration-300 md:static"
+           fixed top-0 left-0 z-50 transition-transform duration-300 lg:static"
     :class="[
       menuAbierto ? 'translate-x-0' : '-translate-x-full',
-      ui.sidebarColapsado ? 'md:hidden' : 'md:translate-x-0'
+      ui.sidebarColapsado ? 'lg:hidden' : 'lg:translate-x-0'
     ]"
   >
     <div class="h-20 flex items-center justify-center border-b border-gray-800 shrink-0 relative">
@@ -120,7 +126,7 @@ const cerrarSesion = () => {
       <!-- Botón cerrar (móvil) -->
       <button
         @click="menuAbierto = false"
-        class="md:hidden absolute right-4 text-gray-400 hover:text-white text-2xl leading-none"
+        class="lg:hidden absolute right-4 text-gray-400 hover:text-white text-2xl leading-none"
         aria-label="Cerrar menú"
       >
         &times;
@@ -128,7 +134,7 @@ const cerrarSesion = () => {
       <!-- Botón colapsar (escritorio) -->
       <button
         @click="ui.setColapsado(true)"
-        class="hidden md:flex absolute right-4 text-gray-400 hover:text-white text-xl leading-none"
+        class="hidden lg:flex absolute right-4 text-gray-400 hover:text-white text-xl leading-none"
         aria-label="Ocultar menú"
         title="Ocultar menú"
       >

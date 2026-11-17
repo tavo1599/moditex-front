@@ -162,7 +162,7 @@ onMounted(() => cargarUsuarios());
           <div>
             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Rol</label>
             <select v-model="form.rol" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm font-bold">
-              <option value="VENDEDOR">Vendedor (Punto de Venta y Almacén)</option>
+              <option value="VENDEDOR">Vendedor (Caja, Almacén, Etiquetas, Conteo y Reportes de ventas)</option>
               <option value="ADMIN">Admin (Acceso total)</option>
             </select>
           </div>

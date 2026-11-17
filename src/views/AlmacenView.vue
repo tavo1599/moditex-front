@@ -781,8 +781,8 @@ onMounted(() => {
          Qué telas tengo registradas, de qué color, de quién y cuánto.
          Se arma con la lista que ya está en pantalla: sale al instante.
          ===================================================================== -->
-    <div v-if="mostrarReporte" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-[100] p-4 overflow-y-auto">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl my-4 overflow-hidden">
+    <div v-if="mostrarReporte" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-[100] p-0 sm:p-4 overflow-y-auto">
+      <div class="bg-white rounded-none sm:rounded-2xl shadow-2xl w-full max-w-6xl my-0 sm:my-4 min-h-full sm:min-h-0 overflow-hidden">
 
         <div class="bg-gradient-to-r from-teal-600 via-cyan-600 to-sky-600 p-5 flex justify-between items-center text-white">
           <div>

@@ -231,21 +231,21 @@ onMounted(cargar);
 
 <template>
   <div class="space-y-6">
-    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-      <h2 class="text-3xl font-bold text-gray-800">🏷️ Impresión de Etiquetas</h2>
+    <div class="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
+      <h2 class="text-2xl sm:text-3xl font-bold text-gray-800">🏷️ Impresión de Etiquetas</h2>
       <p class="text-gray-500 mt-1">Genera etiquetas rápido con la tabla, o crea un diseño propio con el editor libre.</p>
 
       <!-- PESTAÑAS -->
-      <div class="mt-4 inline-flex bg-gray-100 rounded-xl p-1">
+      <div class="mt-4 grid grid-cols-2 sm:inline-flex bg-gray-100 rounded-xl p-1 gap-1 sm:gap-0">
         <button
           @click="modo = 'matriz'"
           :class="modo === 'matriz' ? 'bg-white shadow text-gray-900' : 'text-gray-500'"
-          class="px-5 py-2 rounded-lg font-bold text-sm transition-all"
+          class="px-3 sm:px-5 py-3 sm:py-2 rounded-lg font-bold text-sm transition-all"
         >📋 Generador rápido</button>
         <button
           @click="modo = 'disenador'"
           :class="modo === 'disenador' ? 'bg-white shadow text-gray-900' : 'text-gray-500'"
-          class="px-5 py-2 rounded-lg font-bold text-sm transition-all"
+          class="px-3 sm:px-5 py-3 sm:py-2 rounded-lg font-bold text-sm transition-all"
         >🎨 Diseñador libre</button>
       </div>
     </div>
@@ -256,7 +256,7 @@ onMounted(cargar);
     <!-- ===================== GENERADOR RÁPIDO (MATRIZ) ===================== -->
     <template v-else>
     <!-- CONFIGURACIÓN GENERAL -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
       <div>
         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Producto</label>
         <select v-model="productoId" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white outline-none focus:border-blue-500">
@@ -266,7 +266,7 @@ onMounted(cargar);
       </div>
       <div>
         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Precio general (opcional)</label>
-        <input v-model="precioGeneral" type="number" step="0.10" placeholder="0.00" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-right outline-none focus:border-blue-500">
+        <input v-model="precioGeneral" type="number" inputmode="decimal" step="0.10" placeholder="0.00" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-right outline-none focus:border-blue-500">
       </div>
       <div>
         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Marca (en todas)</label>
@@ -301,6 +301,7 @@ onMounted(cargar);
         </div>
       </div>
 
+      <p v-if="filas.length" class="sm:hidden text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">👉 Desliza la tabla para ver todas las tallas</p>
       <div v-if="!filas.length" class="py-16 text-center text-gray-400 text-sm">
         Agrega un color para empezar a poner cantidades
       </div>
@@ -321,6 +322,7 @@ onMounted(cargar);
                 <input
                   v-model.number="f.cant[t]"
                   type="number"
+                  inputmode="numeric"
                   min="0"
                   placeholder="0"
                   class="w-16 border border-gray-200 rounded-lg text-center py-1.5 outline-none focus:border-blue-500 font-bold"
@@ -334,15 +336,17 @@ onMounted(cargar);
         </table>
       </div>
 
-      <div class="p-4 border-t border-gray-100 flex flex-wrap gap-3 items-center">
-        <span class="text-sm font-black text-blue-600 mr-auto">{{ totalEtiquetas }} etiqueta(s) en esta prenda</span>
-        <button @click="vaciarCantidades" :disabled="!totalEtiquetas" class="px-5 py-3 text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-xl font-bold text-sm disabled:opacity-40" title="Borra solo los números, conserva los colores">
-          Vaciar cantidades
-        </button>
-        <button @click="vaciarColores" :disabled="!filas.length" class="px-5 py-3 text-gray-500 hover:bg-gray-100 rounded-xl font-bold text-sm disabled:opacity-40" title="Borra también los colores">
-          Vaciar colores
-        </button>
-        <button @click="agregarACola" :disabled="!totalEtiquetas" class="bg-gray-900 text-white px-6 py-3 rounded-xl font-black hover:bg-black disabled:opacity-40 flex items-center gap-2">
+      <div class="p-4 border-t border-gray-100 flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-3 sm:items-center">
+        <span class="text-sm font-black text-blue-600 sm:mr-auto">{{ totalEtiquetas }} etiqueta(s) en esta prenda</span>
+        <div class="grid grid-cols-2 gap-2 sm:contents">
+          <button @click="vaciarCantidades" :disabled="!totalEtiquetas" class="px-4 sm:px-5 py-3 text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-xl font-bold text-sm disabled:opacity-40" title="Borra solo los números, conserva los colores">
+            Vaciar cantidades
+          </button>
+          <button @click="vaciarColores" :disabled="!filas.length" class="px-4 sm:px-5 py-3 text-gray-500 border border-gray-200 sm:border-0 hover:bg-gray-100 rounded-xl font-bold text-sm disabled:opacity-40" title="Borra también los colores">
+            Vaciar colores
+          </button>
+        </div>
+        <button @click="agregarACola" :disabled="!totalEtiquetas" class="w-full sm:w-auto bg-gray-900 text-white px-4 sm:px-6 py-4 sm:py-3 rounded-xl font-black hover:bg-black disabled:opacity-40 flex items-center justify-center gap-2">
           ➕ Agregar prenda a la cola
         </button>
       </div>
@@ -350,12 +354,12 @@ onMounted(cargar);
 
     <!-- COLA DE IMPRESIÓN -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-      <div class="flex flex-wrap justify-between items-center gap-3 mb-3">
+      <div class="flex flex-col sm:flex-row sm:flex-wrap sm:justify-between sm:items-center gap-3 mb-3">
         <h3 class="font-bold text-gray-700">🧺 Cola de impresión <span class="text-gray-400 font-normal text-sm">({{ cola.length }} prenda(s))</span></h3>
         <button
           @click="imprimir"
           :disabled="!totalGeneral"
-          class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-40 flex items-center gap-2"
+          class="w-full sm:w-auto bg-blue-600 text-white px-5 sm:px-8 py-4 sm:py-3 rounded-xl font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 disabled:opacity-40 flex items-center justify-center gap-2"
         >
           🖨️ Imprimir todo ({{ totalGeneral }})
         </button>
@@ -365,10 +369,10 @@ onMounted(cargar);
         Aún no agregas prendas a la cola. Arma una prenda arriba y pulsa "Agregar prenda a la cola". Puedes imprimir directo (solo la prenda actual) o juntar varias aquí.
       </div>
       <div v-else class="space-y-2">
-        <div v-for="(l, i) in cola" :key="l.id" class="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-xl px-4 py-2.5">
-          <div>
-            <span class="font-bold text-gray-800">{{ l.producto }}</span>
-            <span class="text-xs text-gray-400 ml-2">· {{ l.marca }} · {{ l.total }} etiqueta(s)</span>
+        <div v-for="(l, i) in cola" :key="l.id" class="flex items-center justify-between gap-2 bg-gray-50 border border-gray-100 rounded-xl px-4 py-2.5">
+          <div class="min-w-0">
+            <span class="font-bold text-gray-800 break-words">{{ l.producto }}</span>
+            <span class="block sm:inline text-xs text-gray-400 sm:ml-2">· {{ l.marca }} · {{ l.total }} etiqueta(s)</span>
           </div>
           <button @click="quitarLote(i)" class="text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded-lg">🗑️</button>
         </div>
