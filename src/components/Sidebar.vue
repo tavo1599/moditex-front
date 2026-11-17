@@ -51,7 +51,7 @@ const menuItems = [
   { name: 'Config. Colores', path: '/config-colores', icon: '🎨', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Reportes', path: '/reportes', icon: '📈', roles: TODOS, seccion: 'produccion' },
   { name: 'Cobranzas', path: '/cobranzas', icon: '💳', roles: ['ADMIN'], seccion: 'produccion' },
-  { name: 'Devoluciones', path: '/devoluciones', icon: '🔄', roles: TODOS, seccion: 'produccion' },
+  { name: 'Ventas', path: '/ventas', icon: '🧾', roles: TODOS, seccion: 'produccion' },
   { name: 'Cierre de Caja', path: '/cierre-caja', icon: '🧾', roles: TODOS, seccion: 'produccion' },
   { name: 'Usuarios', path: '/usuarios', icon: '👥', roles: ['ADMIN'], seccion: 'produccion' },
   // --- TIENDA WEB ---

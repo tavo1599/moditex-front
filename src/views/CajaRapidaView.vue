@@ -10,6 +10,7 @@ import { coincideConPrenda } from '../utils/sku'
 import ModalTicketVenta from '../components/ModalTicketVenta.vue'
 import PanelVentasPendientes from '../components/ventas/PanelVentasPendientes.vue'
 import LineaCarritoRapida from '../components/ventas/LineaCarritoRapida.vue'
+import ModalNuevoCliente from '../components/ModalNuevoCliente.vue'
 
 /**
  * ⚡ CAJA RÁPIDA
@@ -38,6 +39,17 @@ const inventarioTotal = ref<any[]>([])
 const productos = ref<any[]>([])
 const colores = ref<any[]>([])
 const clientes = ref<any[]>([])
+
+// Registrar un cliente nuevo sin salir de la caja: el mismo modal que usa el
+// Punto de Venta. Al guardarlo, queda elegido para el crédito al instante.
+const modalNuevoCliente = ref(false)
+const alRegistrarCliente = (nuevo: any) => {
+  if (!nuevo) return
+  clientes.value.push(nuevo)
+  clienteId.value = nuevo.id
+  clienteNombre.value = nuevo.nombre
+  modalNuevoCliente.value = false
+}
 const cargando = ref(true)
 
 const cargarDatos = async () => {
@@ -556,17 +568,23 @@ onMounted(async () => {
               @click="condicionPago = 'CREDITO_FLEXIBLE'"
               :class="condicionPago !== 'CONTADO' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-400 border-slate-200'"
               class="border-2 py-3 rounded-2xl font-black text-sm uppercase tracking-wider transition-all"
-            >📋 Fiado</button>
+            >📋 Crédito</button>
           </div>
 
-          <select
-            v-if="condicionPago !== 'CONTADO'"
-            v-model="clienteId"
-            class="w-full bg-orange-50 border-2 border-orange-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none focus:border-orange-500"
-          >
-            <option :value="null" disabled>👤 ¿A quién se le fía?</option>
-            <option v-for="c in clientes" :key="c.id" :value="c.id">{{ c.nombre }}</option>
-          </select>
+          <div v-if="condicionPago !== 'CONTADO'" class="flex gap-2">
+            <select
+              v-model="clienteId"
+              class="flex-1 min-w-0 bg-orange-50 border-2 border-orange-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none focus:border-orange-500"
+            >
+              <option :value="null" disabled>👤 ¿A quién se le da el crédito?</option>
+              <option v-for="c in clientes" :key="c.id" :value="c.id">{{ c.nombre }}</option>
+            </select>
+            <button
+              @click="modalNuevoCliente = true"
+              class="shrink-0 bg-orange-500 hover:bg-orange-600 text-white font-black px-4 py-3 rounded-2xl text-sm whitespace-nowrap"
+              title="Registrar un cliente nuevo"
+            >+ Nuevo</button>
+          </div>
 
           <div class="bg-slate-900 text-white rounded-2xl px-5 py-4 flex items-end justify-between">
             <div>
@@ -718,17 +736,23 @@ onMounted(async () => {
               @click="condicionPago = 'CREDITO_FLEXIBLE'"
               :class="condicionPago !== 'CONTADO' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-400 border-slate-200'"
               class="border-2 py-3 rounded-2xl font-black text-sm uppercase tracking-wider"
-            >📋 Fiado</button>
+            >📋 Crédito</button>
           </div>
 
-          <select
-            v-if="condicionPago !== 'CONTADO'"
-            v-model="clienteId"
-            class="w-full bg-orange-50 border-2 border-orange-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
-          >
-            <option :value="null" disabled>👤 ¿A quién se le fía?</option>
-            <option v-for="c in clientes" :key="c.id" :value="c.id">{{ c.nombre }}</option>
-          </select>
+          <div v-if="condicionPago !== 'CONTADO'" class="flex gap-2">
+            <select
+              v-model="clienteId"
+              class="flex-1 min-w-0 bg-orange-50 border-2 border-orange-200 rounded-2xl px-4 py-3 font-bold text-slate-700 outline-none"
+            >
+              <option :value="null" disabled>👤 ¿A quién se le da el crédito?</option>
+              <option v-for="c in clientes" :key="c.id" :value="c.id">{{ c.nombre }}</option>
+            </select>
+            <button
+              @click="modalNuevoCliente = true"
+              class="shrink-0 bg-orange-500 hover:bg-orange-600 text-white font-black px-4 py-3 rounded-2xl text-sm whitespace-nowrap"
+              title="Registrar un cliente nuevo"
+            >+ Nuevo</button>
+          </div>
 
           <div class="bg-slate-900 text-white rounded-2xl px-5 py-4 flex items-end justify-between">
             <div>
@@ -771,6 +795,12 @@ onMounted(async () => {
       :totalPagar="totalPagar"
       :saldoPendiente="saldoPendiente"
       @close="cerrarModalTicket"
+    />
+
+    <ModalNuevoCliente
+      :show="modalNuevoCliente"
+      @close="modalNuevoCliente = false"
+      @cliente-registrado="alRegistrarCliente"
     />
   </div>
 </template>

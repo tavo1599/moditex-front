@@ -2,6 +2,11 @@
 import { ref, computed, onMounted } from 'vue';
 import api from '../api/axios';
 
+// Se puede usar como pantalla propia o EMBEBIDA dentro de la vista de Ventas,
+// precargando una venta por su código (así el vendedor devuelve desde la lista
+// sin volver a buscar).
+const props = defineProps<{ correlativoInicial?: string; embebido?: boolean }>();
+
 const bodegas = ref<any[]>([]);
 const bodegaDestino = ref<number | ''>('');
 const correlativo = ref('');
@@ -190,16 +195,25 @@ const confirmar = async () => {
   }
 };
 
-onMounted(async () => { await cargarBodegas(); await cargarInventario(); });
+onMounted(async () => {
+  await cargarBodegas();
+  await cargarInventario();
+  if (props.correlativoInicial) {
+    correlativo.value = props.correlativoInicial;
+    await buscarVenta();
+  }
+});
 </script>
 
 <template>
   <div class="space-y-6">
     <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-      <h2 class="text-3xl font-bold text-gray-800">🔄 Devoluciones y Cambios</h2>
-      <p class="text-gray-500 mt-1">Busca la venta e indica qué prendas regresan. En un <b>cambio</b>, además eliges la prenda que se lleva y el sistema calcula la diferencia.</p>
+      <template v-if="!embebido">
+        <h2 class="text-3xl font-bold text-gray-800">🔄 Devoluciones y Cambios</h2>
+        <p class="text-gray-500 mt-1">Busca la venta e indica qué prendas regresan. En un <b>cambio</b>, además eliges la prenda que se lleva y el sistema calcula la diferencia.</p>
+      </template>
 
-      <div class="grid grid-cols-2 gap-3 mt-4 max-w-md">
+      <div class="grid grid-cols-2 gap-3 mt-4 max-w-md" :class="embebido ? 'mt-0' : ''">
         <button
           @click="modo = 'devolucion'"
           :class="modo === 'devolucion' ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-500 border-gray-200 hover:border-orange-400'"
@@ -215,7 +229,7 @@ onMounted(async () => { await cargarBodegas(); await cargarInventario(); });
 
     <!-- Buscador -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-wrap gap-3 items-end">
-      <div class="flex-1 min-w-[220px]">
+      <div v-if="!embebido" class="flex-1 min-w-[220px]">
         <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Código de la venta</label>
         <input
           v-model="correlativo"
@@ -231,7 +245,7 @@ onMounted(async () => { await cargarBodegas(); await cargarInventario(); });
           <option v-for="b in bodegas" :key="b.id" :value="b.id">{{ b.nombre }}</option>
         </select>
       </div>
-      <button @click="buscarVenta" :disabled="buscando" class="bg-gray-900 text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-black disabled:opacity-40">
+      <button v-if="!embebido" @click="buscarVenta" :disabled="buscando" class="bg-gray-900 text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-black disabled:opacity-40">
         {{ buscando ? 'Buscando...' : 'Buscar venta' }}
       </button>
     </div>

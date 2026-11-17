@@ -180,9 +180,11 @@ const router = createRouter({
       component: () => import('../views/CierreCajaView.vue')
     },
     {
-      path: '/devoluciones',
-      name: 'devoluciones',
-      component: () => import('../views/DevolucionesView.vue')
+      // La vista "Ventas": lista, cuadre de tallas surtidas y devoluciones.
+      // (Devoluciones ya no es una pantalla suelta: vive embebida aquí.)
+      path: '/ventas',
+      name: 'ventas',
+      component: () => import('../views/VentasView.vue')
     },
     {
       path: '/conteo-inventario',
