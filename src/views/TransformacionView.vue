@@ -28,6 +28,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import api from '../api/axios'
 import { ordenarTallas } from '../utils/tallas'
+import { construirEtiquetas, imprimirEtiquetas } from '../utils/stickers'
 
 type Pestania = 'nuevo' | 'historial' | 'reporte'
 const pestania = ref<Pestania>('nuevo')
@@ -55,12 +56,13 @@ const avisar = (texto: string, tipo: 'ok' | 'error' = 'ok') => {
 const cargarBase = async () => {
   cargando.value = true
   try {
-    const [resR, resP, resC, resT, resB] = await Promise.all([
+    const [resR, resP, resC, resT, resB, resI] = await Promise.all([
       api.get('/rollos/disponibles'),
       api.get('/productos'),
       api.get('/colores'),
       api.get('/talleres'),
       api.get('/almacen-terminados/bodegas'),
+      api.get('/insumos').catch(() => ({ data: [] })),
     ])
     rollosDisponibles.value = resR.data
     // La mercadería comprada no se corta: no tiene sentido ofrecerla aquí.
@@ -68,6 +70,10 @@ const cargarBase = async () => {
     colores.value = resC.data
     talleres.value = resT.data
     bodegas.value = (resB.data || []).filter((b: any) => b.estado !== false)
+    // Avíos para mandar a acabados: bolsas, hangtags, empaques (no la tela).
+    insumosAvio.value = (resI.data || []).filter(
+      (i: any) => i.tipo === 'Avio' || i.tipo === 'Empaque',
+    )
   } catch (e: any) {
     avisar('No se pudo cargar la información: ' + (e.response?.data?.message || e.message), 'error')
   } finally {
@@ -268,6 +274,7 @@ const cargarHistorial = async () => {
 watch(filtroEstado, cargarHistorial)
 
 // ---- Modal de recepción ----
+const insumosAvio = ref<any[]>([])
 const modalRecibir = ref<any>(null)
 const bodegaDestinoId = ref<any>('')
 // recibidos = { 'Negro|M': 20 }
@@ -283,7 +290,8 @@ const abrirRecepcion = async (corte: any) => {
     // Prellenamos con lo que falta: lo normal es que llegue todo.
     recibidos.value = {}
     for (const d of data.detalles) {
-      const pendiente = d.cantidad - d.cantidadRecibida
+      const meta = data.enAcabadosDesde ? (d.cantidadAcabados || 0) : d.cantidad
+      const pendiente = meta - d.cantidadRecibida
       if (pendiente > 0) recibidos.value[clave(d.color, d.talla)] = pendiente
     }
   } catch (e: any) {
@@ -312,10 +320,17 @@ const coloresRecepcion = computed(() => [...new Set(detallesRecepcion.value.map(
 const detalleDe = (color: string, talla: string) =>
   detallesRecepcion.value.find((d: any) => d.color === color && d.talla === talla) || null
 
+/**
+ * Meta de una casilla: lo que se puede recibir. Si el corte pasó por acabados,
+ * la meta es lo contado al entrar a acabados; si no, lo cortado.
+ */
+const metaDe = (d: any) =>
+  modalRecibir.value?.enAcabadosDesde ? (d?.cantidadAcabados || 0) : (d?.cantidad || 0)
+
 /** Cuántas prendas de esa casilla faltan por recibir. */
 const faltaDe = (color: string, talla: string) => {
   const d = detalleDe(color, talla)
-  return d ? Math.max(0, d.cantidad - d.cantidadRecibida) : 0
+  return d ? Math.max(0, metaDe(d) - d.cantidadRecibida) : 0
 }
 
 const enCasilla = (color: string, talla: string) => Number(recibidos.value[clave(color, talla)]) || 0
@@ -416,6 +431,128 @@ const verDetalle = async (corte: any) => {
   } catch (e: any) {
     avisar(e.response?.data?.message || 'No se pudo abrir el detalle.', 'error')
   }
+}
+
+// ---------------------------------------------------------------------------
+// PASO 1b · PASAR A ACABADOS  (conteo del taller + avíos)
+// ---------------------------------------------------------------------------
+// El corte vuelve del taller: se cuenta lo que llegó (como en la recepción) y
+// se le mandan los avíos (bolsas, hangtags…), que bajan del Almacén de Insumos.
+// ---------------------------------------------------------------------------
+const modalAcabados = ref<any>(null)
+const conteoAcabados = ref<Record<string, number>>({})
+const aviosElegidos = ref<{ insumoId: any; cantidad: number | null }[]>([])
+
+const abrirAcabados = async (corte: any) => {
+  try {
+    const { data } = await api.get(`/transformaciones/${corte.id}`)
+    modalAcabados.value = data
+    // Prellenamos el conteo con lo que se cortó (lo normal: llega casi todo).
+    conteoAcabados.value = {}
+    for (const d of data.detalles) {
+      if (d.cantidad > 0) conteoAcabados.value[clave(d.color, d.talla)] = d.cantidad
+    }
+    aviosElegidos.value = [{ insumoId: '', cantidad: null }]
+  } catch (e: any) {
+    avisar(e.response?.data?.message || 'No se pudo abrir el corte.', 'error')
+  }
+}
+
+const detallesAcabados = computed<any[]>(() => modalAcabados.value?.detalles || [])
+const tallasAcabados = computed(() =>
+  ordenarTallas([...new Set(detallesAcabados.value.map((d: any) => d.talla))]),
+)
+const coloresAcabados = computed(() => [...new Set(detallesAcabados.value.map((d: any) => d.color))])
+const cortadasDe = (color: string, talla: string) => {
+  const d = detallesAcabados.value.find((x: any) => x.color === color && x.talla === talla)
+  return d ? d.cantidad : 0
+}
+const totalAcabados = computed(() =>
+  Object.values(conteoAcabados.value).reduce((s, n) => s + (Number(n) || 0), 0),
+)
+
+const agregarAvio = () => aviosElegidos.value.push({ insumoId: '', cantidad: null })
+const quitarAvio = (i: number) => aviosElegidos.value.splice(i, 1)
+const nombreAvio = (id: any) => insumosAvio.value.find((x) => x.id === Number(id))?.nombre || ''
+const stockAvio = (id: any) => Number(insumosAvio.value.find((x) => x.id === Number(id))?.stockActual) || 0
+
+const guardarAcabados = async () => {
+  if (totalAcabados.value <= 0) return avisar('Cuenta cuántas prendas volvieron del taller.', 'error')
+
+  const conteo: any[] = []
+  for (const color of coloresAcabados.value) {
+    for (const talla of tallasAcabados.value) {
+      const n = Number(conteoAcabados.value[clave(color, talla)]) || 0
+      if (n > 0) conteo.push({ color, talla, cantidad: n })
+    }
+  }
+  const avios = aviosElegidos.value
+    .filter((a) => a.insumoId && Number(a.cantidad) > 0)
+    .map((a) => ({ insumoId: Number(a.insumoId), cantidad: Number(a.cantidad) }))
+
+  guardando.value = true
+  try {
+    const { data } = await api.patch(`/transformaciones/${modalAcabados.value.id}/acabados`, { conteo, avios })
+    const texto = (data.aviosRegistrados || []).length
+      ? ` Se descontaron ${data.aviosRegistrados.length} avío(s) del almacén de insumos.`
+      : ''
+    avisar(`🎀 ${data.prendasAcabados} prendas pasaron a acabados.${texto}`)
+    modalAcabados.value = null
+    await cargarBase()
+    await cargarHistorial()
+  } catch (e: any) {
+    avisar(e.response?.data?.message || 'No se pudo pasar a acabados.', 'error')
+  } finally {
+    guardando.value = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// STICKERS DESDE ACABADOS  (reusa la impresión de Etiquetas)
+// ---------------------------------------------------------------------------
+const modalStickers = ref<any>(null)
+const stickerMarca = ref('WEST')
+const stickerPrecio = ref<number | null>(null)
+
+const abrirStickers = async (corte: any) => {
+  try {
+    const { data } = await api.get(`/transformaciones/${corte.id}`)
+    modalStickers.value = data
+    stickerPrecio.value = Number(data.producto?.precioMinorista) || null
+  } catch (e: any) {
+    avisar(e.response?.data?.message || 'No se pudo abrir el corte.', 'error')
+  }
+}
+
+const codigoColorSticker = (nombre: string) => {
+  const c = colores.value.find((x: any) => x.nombre === nombre || x.codigo === nombre)
+  return c?.codigo || String(nombre).substring(0, 3).toUpperCase()
+}
+
+const imprimirStickers = () => {
+  const t = modalStickers.value
+  if (!t) return
+  // Una etiqueta por prenda que pasó a acabados (si no, por lo cortado).
+  const celdas = (t.detalles || [])
+    .map((d: any) => ({
+      color: d.color,
+      colorCodigo: codigoColorSticker(d.color),
+      talla: d.talla,
+      cantidad: d.cantidadAcabados > 0 ? d.cantidadAcabados : d.cantidad,
+    }))
+    .filter((c: any) => c.cantidad > 0)
+
+  const etiquetas = construirEtiquetas({
+    productoId: Number(t.producto?.id || t.productoId),
+    nombreProducto: t.producto?.nombre || 'Prenda',
+    marca: stickerMarca.value || 'WEST',
+    precio: stickerPrecio.value != null ? Number(stickerPrecio.value) : null,
+    celdas,
+  })
+  if (!imprimirEtiquetas(etiquetas)) {
+    return avisar('No hay prendas para imprimir stickers.', 'error')
+  }
+  avisar(`🏷️ ${etiquetas.length} stickers enviados a impresión.`)
 }
 
 const anularCorte = async (corte: any) => {
@@ -568,6 +705,7 @@ const hexDeColor = (nombre: string) => colores.value.find((c) => c.nombre === no
 const estiloCorte = (estado: string) =>
   ({
     EN_PROCESO: 'bg-amber-100 text-amber-800 border-amber-300',
+    EN_ACABADOS: 'bg-violet-100 text-violet-800 border-violet-300',
     PARCIAL: 'bg-sky-100 text-sky-800 border-sky-300',
     RECIBIDO: 'bg-emerald-100 text-emerald-800 border-emerald-300',
     ANULADO: 'bg-rose-100 text-rose-800 border-rose-300',
@@ -576,6 +714,7 @@ const estiloCorte = (estado: string) =>
 const textoCorte = (estado: string) =>
   ({
     EN_PROCESO: '✂️ En el taller',
+    EN_ACABADOS: '🎀 En acabados',
     PARCIAL: '📦 Llegó una parte',
     RECIBIDO: '✅ Recibido completo',
     ANULADO: '🚫 Anulado',
@@ -1032,6 +1171,7 @@ watch(pestania, (p) => {
           v-for="opcion in [
             { v: '', t: 'Todos', c: 'slate' },
             { v: 'EN_PROCESO', t: '✂️ En el taller', c: 'amber' },
+            { v: 'EN_ACABADOS', t: '🎀 En acabados', c: 'violet' },
             { v: 'PARCIAL', t: '📦 Llegó una parte', c: 'sky' },
             { v: 'RECIBIDO', t: '✅ Recibidos', c: 'emerald' },
             { v: 'ANULADO', t: '🚫 Anulados', c: 'rose' },
@@ -1119,14 +1259,30 @@ watch(pestania, (p) => {
               </div>
             </div>
 
-            <!-- Acciones grandes -->
+            <!-- Acciones grandes · el flujo va por etapas -->
             <div class="flex flex-wrap gap-2 mt-4">
+              <!-- 1) En el taller → pasar a acabados -->
               <button
-                v-if="c.estado === 'EN_PROCESO' || c.estado === 'PARCIAL'"
+                v-if="c.estado === 'EN_PROCESO'"
+                @click="abrirAcabados(c)"
+                class="w-full sm:flex-1 sm:min-w-[200px] bg-gradient-to-r from-violet-500 to-fuchsia-600 hover:from-violet-600 hover:to-fuchsia-700
+                       text-white font-black py-4 rounded-xl shadow active:scale-95 transition-all"
+              >🎀 Pasar a Acabados</button>
+
+              <!-- 2) En acabados / parcial → recibir al almacén -->
+              <button
+                v-if="c.estado === 'EN_ACABADOS' || c.estado === 'PARCIAL'"
                 @click="abrirRecepcion(c)"
                 class="w-full sm:flex-1 sm:min-w-[200px] bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700
                        text-white font-black py-4 rounded-xl shadow active:scale-95 transition-all"
-              >📥 Recibir del taller → Almacén</button>
+              >📥 Recibir → Almacén</button>
+
+              <!-- Stickers: disponibles desde acabados en adelante -->
+              <button
+                v-if="c.estado === 'EN_ACABADOS' || c.estado === 'PARCIAL' || c.estado === 'RECIBIDO'"
+                @click="abrirStickers(c)"
+                class="bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-4 sm:px-6 py-4 rounded-xl border-2 border-amber-200"
+              >🏷️ Stickers</button>
 
               <button
                 @click="verDetalle(c)"
@@ -1642,6 +1798,126 @@ watch(pestania, (p) => {
             <p v-if="modalDetalle.taller">🧵 <strong>Taller:</strong> {{ modalDetalle.taller.razonSocial }}</p>
             <p v-if="modalDetalle.numeroGuia">📄 <strong>Guía:</strong> {{ modalDetalle.numeroGuia }}</p>
             <p v-if="modalDetalle.observacion">📝 {{ modalDetalle.observacion }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ================= MODAL: PASAR A ACABADOS ================= -->
+    <div v-if="modalAcabados" class="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" @click.self="modalAcabados = null">
+      <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-3xl shadow-2xl max-h-[92vh] overflow-y-auto">
+        <div class="bg-gradient-to-r from-violet-500 to-fuchsia-600 px-4 sm:px-6 py-4 sm:py-5 text-white sticky top-0 z-10 flex items-center justify-between">
+          <div>
+            <h3 class="text-2xl font-black">🎀 Pasar a Acabados</h3>
+            <p class="text-violet-50 text-sm mt-1">{{ modalAcabados.codigo }} · {{ modalAcabados.producto?.nombre }}</p>
+          </div>
+          <button @click="modalAcabados = null" class="text-white/80 hover:text-white text-2xl sm:text-3xl leading-none">&times;</button>
+        </div>
+
+        <div class="p-4 sm:p-6 space-y-5">
+          <p class="text-sm text-slate-600 bg-violet-50 border-2 border-violet-200 rounded-xl p-4">
+            Cuenta cuántas prendas <strong>volvieron del taller</strong> (puede ser menos de lo cortado) y, si mandas
+            avíos (bolsas, hangtags), elígelos: se descuentan del <strong>Almacén de Insumos</strong>.
+          </p>
+
+          <!-- Conteo del taller (matriz) -->
+          <div>
+            <p class="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-2">Conteo del taller</p>
+            <p v-if="coloresAcabados.length" class="sm:hidden text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">👉 Desliza la tabla para ver todas las tallas</p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm min-w-[360px]">
+                <thead>
+                  <tr>
+                    <th class="p-2 text-left text-[10px] font-black text-slate-400 uppercase">Color</th>
+                    <th v-for="t in tallasAcabados" :key="t" class="p-2 text-center text-[10px] font-black text-slate-500 uppercase">{{ t }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="color in coloresAcabados" :key="color" class="border-t-2 border-slate-100">
+                    <td class="p-2 font-black text-slate-700 whitespace-nowrap">{{ color }}</td>
+                    <td v-for="t in tallasAcabados" :key="t" class="p-1.5 text-center">
+                      <input
+                        v-if="cortadasDe(color, t) > 0"
+                        v-model.number="conteoAcabados[clave(color, t)]"
+                        type="number" inputmode="numeric" min="0" :max="cortadasDe(color, t)"
+                        class="w-16 h-11 text-center border-2 border-slate-200 rounded-lg font-black text-slate-800 focus:border-violet-500 outline-none"
+                        :placeholder="String(cortadasDe(color, t))"
+                      />
+                      <span v-else class="text-slate-300">·</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Avíos -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <p class="text-[11px] font-black text-slate-500 uppercase tracking-wider">Avíos a mandar (opcional)</p>
+              <button @click="agregarAvio" class="text-xs font-black text-violet-700 hover:text-violet-800">+ Agregar avío</button>
+            </div>
+            <div v-if="insumosAvio.length === 0" class="text-xs text-slate-400 font-bold bg-slate-50 rounded-xl p-3">
+              No hay avíos en el Almacén de Insumos (tipo Avío o Empaque). Regístralos en Insumos para poder mandarlos.
+            </div>
+            <div v-else class="space-y-2">
+              <div v-for="(a, i) in aviosElegidos" :key="i" class="flex items-center gap-2">
+                <select v-model="a.insumoId" class="flex-1 min-w-0 border-2 border-slate-200 rounded-xl px-3 h-11 text-sm font-semibold text-slate-700 focus:border-violet-500 outline-none bg-white">
+                  <option value="">Elige un avío...</option>
+                  <option v-for="ins in insumosAvio" :key="ins.id" :value="ins.id">{{ ins.nombre }} (stock {{ Number(ins.stockActual) }})</option>
+                </select>
+                <input
+                  v-model.number="a.cantidad" type="number" inputmode="numeric" min="0"
+                  placeholder="Cant." class="w-24 border-2 border-slate-200 rounded-xl px-3 h-11 text-center font-black text-slate-800 focus:border-violet-500 outline-none"
+                />
+                <button @click="quitarAvio(i)" :disabled="aviosElegidos.length <= 1" class="shrink-0 text-slate-300 hover:text-rose-500 disabled:opacity-20 text-xl font-black px-1">×</button>
+              </div>
+              <p v-for="(a, i) in aviosElegidos" :key="'w'+i" class="text-[11px] font-bold text-rose-500" v-show="a.insumoId && Number(a.cantidad) > stockAvio(a.insumoId)">
+                ⚠️ {{ nombreAvio(a.insumoId) }}: pides {{ a.cantidad }} y solo hay {{ stockAvio(a.insumoId) }}.
+              </p>
+            </div>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-3 pb-seguro sm:pb-0">
+            <button
+              @click="guardarAcabados" :disabled="guardando || totalAcabados <= 0"
+              class="flex-1 bg-gradient-to-r from-violet-500 to-fuchsia-600 hover:from-violet-600 hover:to-fuchsia-700 disabled:opacity-40 text-white font-black py-4 rounded-2xl text-lg"
+            >{{ guardando ? 'Guardando...' : `🎀 Pasar ${totalAcabados} a acabados` }}</button>
+            <button @click="modalAcabados = null" class="px-6 py-4 rounded-2xl font-bold text-slate-600 hover:bg-slate-100">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= MODAL: STICKERS ================= -->
+    <div v-if="modalStickers" class="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" @click.self="modalStickers = null">
+      <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md shadow-2xl">
+        <div class="bg-amber-500 px-4 sm:px-6 py-4 sm:py-5 text-white flex items-center justify-between">
+          <div>
+            <h3 class="text-2xl font-black">🏷️ Stickers</h3>
+            <p class="text-amber-50 text-sm mt-1">{{ modalStickers.codigo }} · {{ modalStickers.producto?.nombre }}</p>
+          </div>
+          <button @click="modalStickers = null" class="text-white/80 hover:text-white text-2xl sm:text-3xl leading-none">&times;</button>
+        </div>
+        <div class="p-4 sm:p-6 space-y-5">
+          <p class="text-sm text-slate-600 bg-amber-50 border-2 border-amber-200 rounded-xl p-4">
+            Sale un sticker por cada prenda de este corte (las que pasaron a acabados), con su color, talla y código.
+            Solo escribe la marca y el precio.
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-1">Marca</label>
+              <input v-model="stickerMarca" type="text" class="w-full border-2 border-slate-200 rounded-xl px-4 h-12 font-black text-slate-800 uppercase focus:border-amber-500 outline-none" />
+            </div>
+            <div>
+              <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-1">Precio (S/)</label>
+              <input v-model.number="stickerPrecio" type="number" inputmode="decimal" step="0.5" min="0" class="w-full border-2 border-slate-200 rounded-xl px-4 h-12 font-black text-slate-800 focus:border-amber-500 outline-none" />
+            </div>
+          </div>
+          <div class="flex flex-col sm:flex-row gap-3 pb-seguro sm:pb-0">
+            <button @click="imprimirStickers" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black py-4 rounded-2xl text-lg">🖨️ Imprimir stickers</button>
+            <button @click="modalStickers = null" class="px-6 py-4 rounded-2xl font-bold text-slate-600 hover:bg-slate-100">Cerrar</button>
           </div>
         </div>
       </div>
