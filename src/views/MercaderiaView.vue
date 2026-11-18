@@ -20,6 +20,7 @@
 import { ref, onMounted, computed } from 'vue'
 import api from '../api/axios'
 import JsBarcode from 'jsbarcode'
+import * as XLSX from 'xlsx'
 
 type Pestania = 'comprar' | 'catalogo' | 'historial'
 const pestania = ref<Pestania>('comprar')
@@ -140,14 +141,97 @@ const lineasValidas = computed(() =>
   ),
 )
 
+// Ya NADA es obligatorio salvo tener al menos una prenda con su cantidad: ni la
+// boleta (se autogenera), ni la bodega (entra a la Principal), ni el precio
+// (sube en 0 y se corrige después). "Que suba así lo que tiene."
 const razonBloqueo = computed(() => {
-  if (!cabecera.value.numeroFactura.trim()) return 'Escribe el número de la factura o boleta.'
-  if (!cabecera.value.bodegaDestinoId) return 'Elige a qué bodega entra la mercadería.'
   if (lineasValidas.value.length === 0) return 'Agrega al menos una prenda con su cantidad.'
-  const sinPrecio = lineasValidas.value.filter((l) => !(Number(l.precioVenta) > 0))
-  if (sinPrecio.length > 0) return `Falta el precio de venta de ${sinPrecio.length} prenda(s).`
   return ''
 })
+
+// Cuántas prendas subirían sin precio de venta (solo para avisar, no bloquea).
+const sinPrecioVenta = computed(() =>
+  lineasValidas.value.filter((l) => !(Number(l.precioVenta) > 0)).length,
+)
+
+// ---------------------------------------------------------------------------
+// 📥 IMPORTAR EXCEL  (carga masiva de mercadería)
+// ---------------------------------------------------------------------------
+// Lee un .xlsx o .csv y llena la tabla con lo que tenga. Reconoce las columnas
+// por su nombre sin importar may/mín, acentos ni el orden: nombre, cantidad,
+// costo (precio de compra), precio de venta y precio por mayor. Lo único que
+// hace falta en cada fila es un nombre y una cantidad.
+const inputExcel = ref<HTMLInputElement | null>(null)
+const importando = ref(false)
+
+const normalizar = (t: any) =>
+  String(t ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+
+/** Busca en la fila la primera columna cuyo encabezado contenga alguno de los términos. */
+const valorDe = (fila: Record<string, any>, claves: Record<string, any>, terminos: string[], excluir: string[] = []) => {
+  for (const col of Object.keys(fila)) {
+    const n = claves[col]
+    if (excluir.some((e) => n.includes(e))) continue
+    if (terminos.some((t) => n.includes(t))) {
+      const v = fila[col]
+      if (v !== '' && v != null) return v
+    }
+  }
+  return ''
+}
+
+const importarExcel = async (ev: Event) => {
+  const input = ev.target as HTMLInputElement
+  const archivo = input.files?.[0]
+  if (!archivo) return
+  importando.value = true
+  try {
+    const buffer = await archivo.arrayBuffer()
+    const wb = XLSX.read(buffer, { type: 'array' })
+    const nombreHoja = wb.SheetNames[0]
+    const hoja = nombreHoja ? wb.Sheets[nombreHoja] : null
+    if (!hoja) { avisar('El Excel no tiene ninguna hoja con datos.', 'error'); return }
+    const filas: Record<string, any>[] = XLSX.utils.sheet_to_json(hoja, { defval: '' })
+
+    let agregadas = 0
+    for (const fila of filas) {
+      // Mapa encabezado-original -> normalizado, una vez por fila.
+      const claves: Record<string, string> = {}
+      for (const col of Object.keys(fila)) claves[col] = normalizar(col)
+
+      const nombre = String(valorDe(fila, claves, ['nombre', 'producto', 'descrip', 'prenda', 'articulo', 'item', 'modelo']) || '').trim()
+      const cantidad = Math.trunc(Number(valorDe(fila, claves, ['cantidad', 'cant', 'unidad', 'stock', 'qty'])) || 0)
+      if (!nombre && cantidad <= 0) continue // fila vacía
+      const costo = Number(valorDe(fila, claves, ['costo', 'compra'], ['venta', 'mayor'])) || 0
+      const mayor = Number(valorDe(fila, claves, ['mayor'])) || 0
+      const venta = Number(valorDe(fila, claves, ['venta', 'publico', 'menor', 'precio'], ['compra', 'costo', 'mayor'])) || 0
+
+      // Si el nombre coincide con una prenda del catálogo, la enlazamos.
+      const existente = catalogo.value.find((p) => normalizar(p.nombre) === normalizar(nombre))
+
+      lineas.value.push({
+        productoId: existente ? existente.id : '',
+        nombre: existente ? existente.nombre : nombre,
+        cantidad: cantidad > 0 ? cantidad : 1,
+        costoUnitario: costo,
+        precioVenta: venta,
+        precioMayorista: mayor,
+      })
+      agregadas++
+    }
+
+    if (agregadas === 0) {
+      avisar('El Excel no tenía filas con nombre o cantidad. Revisa que haya encabezados (nombre, cantidad, precio...).', 'error')
+    } else {
+      avisar(`📥 ${agregadas} prenda(s) cargadas del Excel. Revísalas y registra la compra.`)
+    }
+  } catch (e: any) {
+    avisar('No se pudo leer el Excel: ' + (e?.message || 'archivo no válido'), 'error')
+  } finally {
+    importando.value = false
+    input.value = '' // permite volver a subir el mismo archivo
+  }
+}
 
 // Resultado de la última compra: de aquí salen las etiquetas a imprimir
 const ultimaCompra = ref<any>(null)
@@ -370,29 +454,29 @@ const fecha = (f: string) => new Date(f).toLocaleDateString('es-PE', { day: '2-d
       <div class="bg-white rounded-3xl shadow-sm overflow-hidden">
         <div class="bg-gradient-to-r from-orange-500 to-amber-600 px-6 py-5 text-white">
           <h2 class="text-2xl font-black">🧾 Datos de la compra</h2>
-          <p class="text-orange-100 text-sm mt-1">El número de factura evita que la misma compra se registre dos veces.</p>
+          <p class="text-orange-100 text-sm mt-1">Todo es opcional: si no pones boleta, bodega o precio, igual se registra con lo que tengas.</p>
         </div>
 
         <div class="p-6 grid md:grid-cols-3 gap-5">
           <div>
             <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-2">
-              N° de factura o boleta <span class="text-rose-500">*</span>
+              N° de factura o boleta <span class="text-slate-400 font-bold normal-case">(opcional)</span>
             </label>
             <input
-              v-model="cabecera.numeroFactura" type="text" placeholder="Ej. F001-00123"
+              v-model="cabecera.numeroFactura" type="text" placeholder="Opcional — ej. F001-00123"
               class="w-full border-2 border-slate-200 rounded-xl px-4 h-14 text-lg font-black text-slate-800 uppercase focus:border-orange-500 outline-none"
             />
           </div>
 
           <div>
             <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-2">
-              ¿A qué bodega entra? <span class="text-rose-500">*</span>
+              ¿A qué bodega entra? <span class="text-slate-400 font-bold normal-case">(opcional)</span>
             </label>
             <select
               v-model="cabecera.bodegaDestinoId"
               class="w-full border-2 border-slate-200 rounded-xl px-4 h-14 text-lg font-bold text-slate-700 focus:border-orange-500 outline-none"
             >
-              <option value="">— Elige la bodega —</option>
+              <option value="">— Principal (por defecto) —</option>
               <option v-for="b in bodegas" :key="b.id" :value="b.id">{{ b.nombre }}</option>
             </select>
           </div>
@@ -422,10 +506,22 @@ const fecha = (f: string) => new Date(f).toLocaleDateString('es-PE', { day: '2-d
             <h2 class="text-2xl font-black">👕 ¿Qué compramos?</h2>
             <p class="text-indigo-100 text-sm mt-1">Sin talla ni color: solo nombre y cantidad.</p>
           </div>
-          <button
-            @click="agregarLinea"
-            class="bg-white text-indigo-700 hover:bg-indigo-50 font-black text-lg px-6 py-3.5 rounded-2xl shadow-lg active:scale-95 transition-transform"
-          >➕ Agregar prenda</button>
+          <div class="flex flex-wrap gap-2">
+            <input
+              ref="inputExcel" type="file" accept=".xlsx,.xls,.csv"
+              class="hidden" @change="importarExcel"
+            />
+            <button
+              @click="inputExcel?.click()"
+              :disabled="importando"
+              class="bg-white/15 border-2 border-white/40 text-white hover:bg-white/25 font-black text-lg px-5 py-3.5 rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50"
+              title="Sube un Excel (.xlsx o .csv) con columnas: nombre, cantidad, costo, precio venta, precio mayor"
+            >{{ importando ? '📥 Leyendo...' : '📥 Importar Excel' }}</button>
+            <button
+              @click="agregarLinea"
+              class="bg-white text-indigo-700 hover:bg-indigo-50 font-black text-lg px-6 py-3.5 rounded-2xl shadow-lg active:scale-95 transition-transform"
+            >➕ Agregar prenda</button>
+          </div>
         </div>
 
         <div class="p-6">
@@ -486,14 +582,14 @@ const fecha = (f: string) => new Date(f).toLocaleDateString('es-PE', { day: '2-d
                 <div>
                   <label class="block text-xs font-black uppercase tracking-wider text-slate-600 mb-2">Cantidad</label>
                   <input
-                    v-model.number="l.cantidad" type="number" min="1"
+                    v-model.number="l.cantidad" type="number" inputmode="numeric" min="1"
                     class="w-full border-2 border-slate-300 rounded-xl px-4 h-14 text-2xl text-center font-black text-slate-800 focus:border-indigo-500 outline-none"
                   />
                 </div>
                 <div>
                   <label class="block text-xs font-black uppercase tracking-wider text-rose-600 mb-2">Precio compra</label>
                   <input
-                    v-model.number="l.costoUnitario" type="number" step="0.01" min="0" placeholder="0.00"
+                    v-model.number="l.costoUnitario" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00"
                     class="w-full border-2 border-rose-200 bg-rose-50 rounded-xl px-4 h-14 text-xl text-center font-black text-rose-800 focus:border-rose-500 outline-none"
                   />
                 </div>
@@ -502,14 +598,14 @@ const fecha = (f: string) => new Date(f).toLocaleDateString('es-PE', { day: '2-d
                     Precio venta <span class="text-rose-500">*</span>
                   </label>
                   <input
-                    v-model.number="l.precioVenta" type="number" step="0.01" min="0" placeholder="0.00"
+                    v-model.number="l.precioVenta" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00"
                     class="w-full border-2 border-emerald-300 bg-emerald-50 rounded-xl px-4 h-14 text-xl text-center font-black text-emerald-800 focus:border-emerald-500 outline-none"
                   />
                 </div>
                 <div>
                   <label class="block text-xs font-black uppercase tracking-wider text-sky-600 mb-2">Precio mayorista</label>
                   <input
-                    v-model.number="l.precioMayorista" type="number" step="0.01" min="0" placeholder="opcional"
+                    v-model.number="l.precioMayorista" type="number" inputmode="decimal" step="0.01" min="0" placeholder="opcional"
                     class="w-full border-2 border-sky-200 bg-sky-50 rounded-xl px-4 h-14 text-xl text-center font-black text-sky-800 focus:border-sky-500 outline-none"
                   />
                 </div>
@@ -658,7 +754,7 @@ const fecha = (f: string) => new Date(f).toLocaleDateString('es-PE', { day: '2-d
             <div>
               <label class="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">Cuántas imprimir</label>
               <input
-                v-model.number="e.imprimir" type="number" min="0"
+                v-model.number="e.imprimir" type="number" inputmode="numeric" min="0"
                 class="w-28 border-2 border-slate-300 rounded-xl h-12 text-center text-xl font-black text-slate-800 focus:border-indigo-500 outline-none"
               />
             </div>
