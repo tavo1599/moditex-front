@@ -1,160 +1,110 @@
 <template>
-  <div class="min-h-screen bg-[#F8FAFC] p-6 lg:p-8 font-sans">
-    
-    <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div>
-        <h1 class="text-3xl font-black text-gray-900 tracking-tight">Dashboard Moditex</h1>
-        <p class="text-sm text-gray-500 mt-1 font-medium">Control en tiempo real de ventas y almacén</p>
+  <div class="min-h-screen bg-slate-50 p-4 lg:p-8 font-sans space-y-6">
+
+    <!-- Encabezado -->
+    <header class="bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-800 text-white rounded-3xl p-6 lg:p-8 shadow-lg">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 class="text-3xl lg:text-4xl font-black tracking-tight flex items-center gap-2">📈 Reportes</h1>
+          <p class="text-indigo-100 mt-1 text-sm font-medium">Ventas y stock en tiempo real.</p>
+        </div>
+        <button
+          @click="obtenerReportes"
+          :disabled="cargando"
+          class="bg-white/15 hover:bg-white/25 border-2 border-white/30 text-white font-black px-5 py-3 rounded-2xl shadow transition-transform active:scale-95 disabled:opacity-50 w-full lg:w-auto"
+        >
+          <span :class="{ 'animate-spin inline-block': cargando }">🔄</span>
+          {{ cargando ? 'Actualizando...' : 'Actualizar' }}
+        </button>
       </div>
-      
-      <button 
-        @click="obtenerReportes" 
-        :disabled="cargando"
-        class="inline-flex items-center justify-center px-4 py-2 bg-black text-white text-sm font-bold rounded-lg shadow-md hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <svg v-if="cargando" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <svg v-else class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-        {{ cargando ? 'Actualizando...' : 'Actualizar Datos' }}
-      </button>
+
+      <!-- KPIs dentro del encabezado -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+        <div class="bg-white/10 backdrop-blur rounded-2xl p-5 border border-white/10">
+          <p class="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">Ingresos de hoy</p>
+          <h2 class="text-3xl font-black">S/ {{ resumen.ventasHoy }}</h2>
+        </div>
+        <div class="bg-white/10 backdrop-blur rounded-2xl p-5 border border-white/10">
+          <p class="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">Prendas vendidas</p>
+          <h2 class="text-3xl font-black">{{ resumen.prendasVendidas }} <span class="text-lg text-indigo-200">unds</span></h2>
+        </div>
+        <div class="bg-white/10 backdrop-blur rounded-2xl p-5 border border-white/10">
+          <p class="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">Stock crítico</p>
+          <h2 class="text-3xl font-black text-rose-200">{{ resumen.stockBajo }} <span class="text-lg text-rose-300">SKUs</span></h2>
+        </div>
+      </div>
     </header>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-      <div class="bg-white rounded-2xl p-6 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-gray-100 flex items-center justify-between relative overflow-hidden group">
-        <div class="absolute w-2 h-full bg-emerald-500 left-0 top-0"></div>
-        <div class="pl-4">
-          <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Ingresos de Hoy</p>
-          <h2 class="text-3xl font-black text-gray-900">S/ {{ resumen.ventasHoy }}</h2>
-        </div>
-        <div class="p-3 bg-emerald-50 rounded-xl">
-          <svg class="w-8 h-8 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-2xl p-6 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-gray-100 flex items-center justify-between relative overflow-hidden">
-        <div class="absolute w-2 h-full bg-indigo-500 left-0 top-0"></div>
-        <div class="pl-4">
-          <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Prendas Vendidas</p>
-          <h2 class="text-3xl font-black text-gray-900">{{ resumen.prendasVendidas }} <span class="text-lg text-gray-500 font-bold">unds</span></h2>
-        </div>
-        <div class="p-3 bg-indigo-50 rounded-xl">
-          <svg class="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-          </svg>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-2xl p-6 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-gray-100 flex items-center justify-between relative overflow-hidden">
-        <div class="absolute w-2 h-full bg-rose-500 left-0 top-0"></div>
-        <div class="pl-4">
-          <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Stock Crítico</p>
-          <h2 class="text-3xl font-black text-rose-600">{{ resumen.stockBajo }} <span class="text-lg text-rose-400 font-bold">SKUs</span></h2>
-        </div>
-        <div class="p-3 bg-rose-50 rounded-xl">
-          <svg class="w-8 h-8 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        </div>
-      </div>
-    </div>
-
     <!-- REPORTE DE STOCK POR PRENDA (talla x color) -->
-    <div class="mb-10">
-      <ReportePorPrenda />
-    </div>
+    <ReportePorPrenda />
 
-    <div class="bg-white rounded-2xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-gray-100 overflow-hidden">
-      <div class="px-6 py-5 border-b border-gray-100">
-        <h3 class="text-lg font-bold text-gray-900">Últimas Transacciones</h3>
+    <!-- ÚLTIMAS TRANSACCIONES -->
+    <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+      <div class="px-5 lg:px-6 py-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+        <h3 class="text-lg font-black text-slate-800">🧾 Últimas transacciones</h3>
+        <span class="text-xs font-bold text-slate-400">{{ ventas.length }} ventas</span>
       </div>
-      
-      <!-- FILTRO DE FECHAS -->
-      <div class="px-6 py-4 border-b border-gray-100 flex flex-wrap items-center gap-2 print:hidden">
-        <span class="text-[11px] font-black text-gray-400 uppercase tracking-wider mr-1">Ver:</span>
-        <button @click="filtrar('')" :class="!fechaFiltro ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'" class="px-4 py-2 rounded-lg border text-xs font-bold transition-all">Últimas</button>
-        <button @click="filtrar(HOY)" :class="fechaFiltro === HOY ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200 hover:border-blue-400'" class="px-4 py-2 rounded-lg border text-xs font-bold transition-all">Hoy</button>
-        <button @click="filtrar(AYER)" :class="fechaFiltro === AYER ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200 hover:border-blue-400'" class="px-4 py-2 rounded-lg border text-xs font-bold transition-all">Ayer</button>
+
+      <!-- Filtros -->
+      <div class="px-5 lg:px-6 py-4 border-b border-slate-100 flex flex-wrap items-center gap-2 print:hidden">
+        <div class="flex items-center gap-2">
+          <button @click="filtrar('')" :class="!fechaFiltro ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'" class="px-4 h-11 rounded-xl border-2 text-xs font-black transition-all">Últimas</button>
+          <button @click="filtrar(HOY)" :class="fechaFiltro === HOY ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-400'" class="px-4 h-11 rounded-xl border-2 text-xs font-black transition-all">Hoy</button>
+          <button @click="filtrar(AYER)" :class="fechaFiltro === AYER ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-400'" class="px-4 h-11 rounded-xl border-2 text-xs font-black transition-all">Ayer</button>
+        </div>
+        <select
+          v-if="bodegas.length > 1"
+          v-model="bodegaFiltro"
+          @change="filtrarBodega"
+          class="h-11 border-2 border-slate-200 rounded-xl px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 bg-white"
+        >
+          <option :value="''">🏬 Todos los almacenes</option>
+          <option v-for="b in bodegas" :key="b.id" :value="b.id">{{ b.nombre }}</option>
+        </select>
         <div class="flex items-center gap-2 ml-auto">
-          <label class="text-[11px] font-black text-gray-400 uppercase tracking-wider">Otra fecha</label>
-          <input type="date" :value="fechaFiltro" @change="filtrar($event.target.value)" class="border border-gray-200 rounded-lg px-3 py-2 text-xs font-bold text-gray-700 outline-none focus:border-blue-500" />
+          <label class="text-[11px] font-black text-slate-400 uppercase tracking-wider hidden sm:block">Otra fecha</label>
+          <input type="date" :value="fechaFiltro" @change="filtrar($event.target.value)" class="h-11 border-2 border-slate-200 rounded-xl px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500" />
         </div>
       </div>
 
       <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-gray-50/50">
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">Código</th>
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">Fecha y Hora</th>
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">Método</th>
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">Almacén</th>
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">Total</th>
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">Estado</th>
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100 text-center">Detalle</th>
+        <table class="w-full text-left min-w-[640px]">
+          <thead class="bg-slate-800 text-white uppercase text-[10px] tracking-wider">
+            <tr>
+              <th class="px-6 py-4">Código</th>
+              <th class="px-6 py-4">Fecha y hora</th>
+              <th class="px-6 py-4">Método</th>
+              <th class="px-6 py-4">Almacén</th>
+              <th class="px-6 py-4 text-right">Total</th>
+              <th class="px-6 py-4 text-center">Estado</th>
+              <th class="px-6 py-4 text-center">Detalle</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-50">
+          <tbody class="divide-y divide-slate-100">
             <tr v-if="cargando && ventas.length === 0">
-              <td colspan="5" class="px-6 py-10 text-center text-gray-400 font-medium">
-                Cargando datos del servidor...
-              </td>
+              <td colspan="7" class="px-6 py-10 text-center text-slate-400 font-bold">Cargando datos...</td>
             </tr>
-            
             <tr v-else-if="ventas.length === 0">
-              <td colspan="5" class="px-6 py-10 text-center text-gray-400 font-medium">
-                No hay ventas registradas aún.
-              </td>
+              <td colspan="7" class="px-6 py-10 text-center text-slate-400 font-bold">No hay ventas en este filtro.</td>
             </tr>
-
-            <tr v-for="venta in ventas" :key="venta.id" class="hover:bg-gray-50/80 transition-colors duration-150">
+            <tr v-for="venta in ventas" :key="venta.id" class="hover:bg-indigo-50/40 transition-colors">
               <td class="px-6 py-4">
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-bold bg-gray-100 text-gray-800 border border-gray-200 font-mono">
-                  {{ venta.correlativo }}
-                </span>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-black bg-slate-100 text-slate-800 font-mono">{{ venta.correlativo }}</span>
               </td>
-              <td class="px-6 py-4 text-sm font-medium text-gray-600">
-                {{ formatearFecha(venta.createdAt) }}
+              <td class="px-6 py-4 text-sm font-bold text-slate-600 whitespace-nowrap">{{ formatearFecha(venta.createdAt) }}</td>
+              <td class="px-6 py-4"><span class="text-xs font-black text-slate-500 uppercase tracking-wider">{{ venta.metodoPago }}</span></td>
+              <td class="px-6 py-4">
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700">🏬 {{ venta.almacen }}</span>
               </td>
-              <td class="px-6 py-4">
-                <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">{{ venta.metodoPago }}</span>
-              </td>
-              <td class="px-6 py-4">
-  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
-    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-    </svg>
-    {{ venta.almacen }}
-  </span>
-</td>
-              <td class="px-6 py-4">
-                <span class="text-sm font-black text-gray-900">S/ {{ parseFloat(venta.total).toFixed(2) }}</span>
-              </td>
-              <td class="px-6 py-4">
-                <span :class="[
-                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold',
-                  venta.estado === 'Completada' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                ]">
+              <td class="px-6 py-4 text-right"><span class="text-sm font-black text-slate-900 whitespace-nowrap">S/ {{ parseFloat(venta.total).toFixed(2) }}</span></td>
+              <td class="px-6 py-4 text-center">
+                <span :class="['inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black whitespace-nowrap', venta.estado === 'Completada' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700']">
                   <span :class="['w-1.5 h-1.5 rounded-full', venta.estado === 'Completada' ? 'bg-emerald-500' : 'bg-amber-500']"></span>
                   {{ venta.estado }}
                 </span>
               </td>
               <td class="px-6 py-4 text-center">
-                <button
-                  @click="verDetalle(venta)"
-                  title="Ver detalle de la venta"
-                  class="text-gray-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors"
-                >
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
-                </button>
+                <button @click="verDetalle(venta)" title="Ver detalle" class="bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 font-bold text-xs px-3 py-2 rounded-lg transition-colors">👁 Ver</button>
               </td>
             </tr>
           </tbody>
@@ -196,8 +146,8 @@
           <!-- Prendas vendidas -->
           <div>
             <h4 class="font-black text-gray-700 mb-2 text-sm uppercase tracking-wider">Prendas vendidas ({{ detalle.prendas }})</h4>
-            <div class="border border-gray-100 rounded-xl overflow-hidden">
-              <table class="w-full text-sm">
+            <div class="border border-gray-100 rounded-xl overflow-x-auto">
+              <table class="w-full text-sm min-w-[360px]">
                 <thead class="bg-gray-50 text-gray-500 text-[10px] uppercase font-bold">
                   <tr>
                     <th class="p-3 text-left">Prenda</th>
@@ -254,8 +204,8 @@
 
             <!-- Historial: cómo fue creciendo su crédito -->
             <p class="text-[10px] font-black text-orange-400 uppercase mb-2">Historial de créditos de este cliente</p>
-            <div class="bg-white border border-orange-100 rounded-xl overflow-hidden">
-              <table class="w-full text-sm">
+            <div class="bg-white border border-orange-100 rounded-xl overflow-x-auto">
+              <table class="w-full text-sm min-w-[360px]">
                 <thead class="bg-orange-50 text-orange-600 text-[10px] uppercase font-bold">
                   <tr>
                     <th class="p-2.5 text-left">Venta</th>
@@ -304,12 +254,23 @@ import api from '../api/axios';
 import ReportePorPrenda from '../components/reportes/ReportePorPrenda.vue';
 
 const ventas = ref([]);
-const cargando = ref(false); // 🔥 Nuevo estado para mejorar UX
+const cargando = ref(false);
 const resumen = ref({
   ventasHoy: '0.00',
   prendasVendidas: 0,
   stockBajo: 0
 });
+
+// Multi-almacén: el admin puede filtrar el reporte por almacén. '' = todos.
+const bodegas = ref([]);
+const bodegaFiltro = ref('');
+const cargarBodegas = async () => {
+  try {
+    const { data } = await api.get('/almacen-terminados/bodegas');
+    bodegas.value = data || [];
+  } catch (e) { /* sin bodegas, sin filtro */ }
+};
+const filtrarBodega = () => obtenerReportes();
 
 // --- Filtro de fechas ---
 const aISO = (d) => {
@@ -326,7 +287,9 @@ const filtrar = (f) => { fechaFiltro.value = f; obtenerReportes(); };
 const obtenerReportes = async () => {
   cargando.value = true;
   try {
-    const params = fechaFiltro.value ? { fecha: fechaFiltro.value } : {};
+    const params = {};
+    if (fechaFiltro.value) params.fecha = fechaFiltro.value;
+    if (bodegaFiltro.value) params.bodegaId = bodegaFiltro.value;
     const { data } = await api.get('/ventas/reporte-general', { params });
     ventas.value = data.ultimasVentas || [];
     resumen.value = data.kpis || resumen.value;
@@ -367,5 +330,5 @@ const formatearFecha = (fecha) => {
   });
 };
 
-onMounted(obtenerReportes);
+onMounted(() => { cargarBodegas(); obtenerReportes(); });
 </script>

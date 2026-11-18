@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import api from '../api/axios';
 
 const usuarios = ref<any[]>([]);
+const bodegas = ref<any[]>([]);
 const cargando = ref(true);
 
 // Modal crear/editar
@@ -16,13 +17,26 @@ const form = ref({
   nombre: '',
   password: '',
   rol: 'VENDEDOR',
+  // Almacenes que podrá ver. Vacío = ve todos (y el ADMIN siempre ve todos).
+  bodegaIds: [] as number[],
 });
+
+const nombreBodega = (id: number) => bodegas.value.find((b) => b.id === id)?.nombre || `#${id}`;
+const alternarBodega = (id: number) => {
+  const i = form.value.bodegaIds.indexOf(id);
+  if (i >= 0) form.value.bodegaIds.splice(i, 1);
+  else form.value.bodegaIds.push(id);
+};
 
 const cargarUsuarios = async () => {
   cargando.value = true;
   try {
-    const res = await api.get('/usuarios');
-    usuarios.value = res.data;
+    const [resU, resB] = await Promise.all([
+      api.get('/usuarios'),
+      api.get('/almacen-terminados/bodegas'),
+    ]);
+    usuarios.value = resU.data;
+    bodegas.value = resB.data || [];
   } catch (error) {
     console.error('Error al cargar usuarios:', error);
   } finally {
@@ -33,7 +47,7 @@ const cargarUsuarios = async () => {
 const abrirNuevo = () => {
   modoEdicion.value = false;
   idEdicion.value = null;
-  form.value = { email: '', nombre: '', password: '', rol: 'VENDEDOR' };
+  form.value = { email: '', nombre: '', password: '', rol: 'VENDEDOR', bodegaIds: [] };
   mostrarModal.value = true;
 };
 
@@ -41,7 +55,7 @@ const abrirEditar = (u: any) => {
   modoEdicion.value = true;
   idEdicion.value = u.id;
   // El email no se edita; la contraseña se deja vacía (solo se cambia si escriben una nueva)
-  form.value = { email: u.email, nombre: u.nombre, password: '', rol: u.rol };
+  form.value = { email: u.email, nombre: u.nombre, password: '', rol: u.rol, bodegaIds: [...(u.bodegaIds || [])] };
   mostrarModal.value = true;
 };
 
@@ -57,6 +71,7 @@ const guardar = async () => {
         nombre: form.value.nombre,
         rol: form.value.rol,
         password: form.value.password, // si va vacío, el backend no la cambia
+        bodegaIds: form.value.bodegaIds,
       });
     } else {
       await api.post('/usuarios', form.value);
@@ -101,18 +116,20 @@ onMounted(() => cargarUsuarios());
     </div>
 
     <div v-else class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-      <table class="w-full text-left text-sm">
+      <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm min-w-[560px]">
         <thead class="bg-gray-800 text-white font-bold uppercase text-[10px] tracking-wider">
           <tr>
             <th class="p-4">Nombre</th>
             <th class="p-4">Email</th>
             <th class="p-4 text-center">Rol</th>
+            <th class="p-4">Almacenes</th>
             <th class="p-4 text-center">Acciones</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           <tr v-if="usuarios.length === 0">
-            <td colspan="4" class="p-8 text-center text-gray-400 font-bold">No hay usuarios registrados.</td>
+            <td colspan="5" class="p-8 text-center text-gray-400 font-bold">No hay usuarios registrados.</td>
           </tr>
           <tr v-for="u in usuarios" :key="u.id" class="hover:bg-blue-50/50 transition-colors even:bg-slate-50">
             <td class="p-4 font-medium text-gray-800">{{ u.nombre }}</td>
@@ -123,6 +140,15 @@ onMounted(() => cargarUsuarios());
                 {{ u.rol }}
               </span>
             </td>
+            <td class="p-4">
+              <span v-if="u.rol === 'ADMIN'" class="text-[11px] text-gray-400 font-bold">Todos</span>
+              <span v-else-if="!u.bodegaIds || u.bodegaIds.length === 0" class="text-[11px] text-gray-400 font-bold">Todos</span>
+              <div v-else class="flex flex-wrap gap-1">
+                <span v-for="id in u.bodegaIds" :key="id" class="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg">
+                  {{ nombreBodega(id) }}
+                </span>
+              </div>
+            </td>
             <td class="p-4 text-center">
               <div class="flex justify-center gap-2">
                 <button @click="abrirEditar(u)" class="text-blue-500 hover:text-blue-700 hover:bg-blue-50 px-2 py-1.5 rounded-lg font-bold text-xs transition">✏️ Editar</button>
@@ -132,6 +158,7 @@ onMounted(() => cargarUsuarios());
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <div v-if="mostrarModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
@@ -162,9 +189,33 @@ onMounted(() => cargarUsuarios());
           <div>
             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Rol</label>
             <select v-model="form.rol" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm font-bold">
-              <option value="VENDEDOR">Vendedor (Caja, Almacén, Etiquetas, Conteo y Reportes de ventas)</option>
+              <option value="VENDEDOR">Vendedor (Caja, Clientes, Conteo, Ventas…)</option>
               <option value="ADMIN">Admin (Acceso total)</option>
             </select>
+          </div>
+
+          <!-- Almacenes que puede ver -->
+          <div v-if="form.rol !== 'ADMIN'">
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Almacenes que puede ver</label>
+            <p class="text-[11px] text-gray-400 mb-2">
+              Marca uno o varios. Al abrir Caja, Ventas o Inventario, todo se filtra a estos.
+              <b>Sin marcar ninguno = ve todos.</b>
+            </p>
+            <div v-if="bodegas.length === 0" class="text-xs text-gray-400 font-bold py-2">No hay almacenes registrados.</div>
+            <div v-else class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+              <label
+                v-for="b in bodegas"
+                :key="b.id"
+                class="flex items-center gap-2 border-2 rounded-xl px-3 py-2 cursor-pointer text-sm font-bold transition-colors"
+                :class="form.bodegaIds.includes(b.id) ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 text-gray-600 hover:border-gray-300'"
+              >
+                <input type="checkbox" :checked="form.bodegaIds.includes(b.id)" @change="alternarBodega(b.id)" class="w-4 h-4 accent-blue-600" />
+                <span class="truncate">{{ b.nombre }}</span>
+              </label>
+            </div>
+          </div>
+          <div v-else class="bg-purple-50 border border-purple-200 rounded-xl px-3 py-2 text-[11px] font-bold text-purple-700">
+            El ADMIN siempre ve todos los almacenes.
           </div>
         </div>
 

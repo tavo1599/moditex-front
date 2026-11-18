@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import api from '../api/axios';
+import { useAuthStore } from '../stores/auth';
+
+// El vendedor ve el catálogo como SOLO LECTURA: crear/editar/eliminar es de
+// ADMIN (el backend también lo bloquea). Así la pantalla no le ofrece botones
+// que terminarían en un 403.
+const auth = useAuthStore();
 
 // El molde exacto de tu tabla Producto en Prisma
 interface Producto {
@@ -92,7 +98,7 @@ onMounted(() => {
         <h2 class="text-3xl font-bold text-gray-800">Catálogo de Modelos</h2>
         <p class="text-gray-500 mt-1">Registra las prendas base que fabricará MODITEX.</p>
       </div>
-      <button @click="abrirModal" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold shadow-md transition-colors">
+      <button v-if="auth.esAdmin" @click="abrirModal" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold shadow-md transition-colors">
         + Nuevo Modelo
       </button>
     </div>
@@ -104,15 +110,15 @@ onMounted(() => {
             <th class="p-4 font-medium w-32">SKU Base</th>
             <th class="p-4 font-medium">Nombre del Modelo</th>
             <th class="p-4 font-medium">Categoría</th>
-            <th class="p-4 font-medium text-center w-24">Acciones</th>
+            <th v-if="auth.esAdmin" class="p-4 font-medium text-center w-24">Acciones</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           <tr v-if="cargando">
-            <td colspan="4" class="p-8 text-center text-gray-400">Consultando catálogo...</td>
+            <td :colspan="auth.esAdmin ? 4 : 3" class="p-8 text-center text-gray-400">Consultando catálogo...</td>
           </tr>
           <tr v-else-if="productos.length === 0">
-            <td colspan="4" class="p-8 text-center text-gray-500">Aún no tienes modelos. Crea el primero.</td>
+            <td :colspan="auth.esAdmin ? 4 : 3" class="p-8 text-center text-gray-500">Aún no hay modelos registrados.</td>
           </tr>
           <tr v-else v-for="item in productos" :key="item.id" class="hover:bg-gray-50 transition-colors">
             <td class="p-4 text-sm font-mono font-bold text-gray-900">{{ item.skuBase }}</td>
@@ -120,7 +126,7 @@ onMounted(() => {
             <td class="p-4 text-sm text-gray-500">
               <span class="px-2 py-1 rounded bg-gray-100">{{ item.categoria }}</span>
             </td>
-            <td class="p-4 text-center">
+            <td v-if="auth.esAdmin" class="p-4 text-center">
               <div class="flex justify-center gap-2">
                 <button @click="abrirEditar(item)" class="text-gray-400 hover:text-blue-600 transition text-lg" title="Editar">✏️</button>
                 <button @click="item.id && eliminarProducto(item.id)" class="text-gray-400 hover:text-red-600 transition text-lg" title="Eliminar">🗑️</button>

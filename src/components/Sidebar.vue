@@ -17,25 +17,25 @@ watch(() => route.path, () => { menuAbierto.value = false })
 
 // Cada ítem declara qué roles pueden verlo y a qué sección pertenece.
 //
-// El VENDEDOR (rol simple) ve solo lo operativo del mostrador:
-//   Caja Rápida · Punto de Venta · Almacén de terminados · Etiquetas ·
-//   Conteo de Inventario · Reportes (de ventas) · Cierre de Caja · Devoluciones
-// Nada de gerencia (Dashboard, Cobranzas, Compras, Producción, Usuarios, Web…).
+// El VENDEDOR (rol simple) ve solo SU mostrador, nada de gerencia:
+//   Dashboard · Productos · Caja Rápida · Clientes · Cuentas por Cobrar ·
+//   Conteo de Inventario · Ventas
+// Fuera: Almacén, Producción, Compras, Transformación, Rollos, Etiquetas,
+// Reportes, Punto de Venta, Cierre de Caja, Usuarios, Web…
 // El menú es solo lo visual: el router y el backend aplican la misma regla.
 // seccion 'produccion' = ERP; seccion 'web' = gestión de la tienda online.
-// VENDEDOR ve solo lo operativo de venta; ADMIN ve todo.
 const TODOS = ['ADMIN', 'VENDEDOR'];
 const menuItems = [
   // --- PRODUCCIÓN (ERP) ---
-  { name: 'Dashboard', path: '/', icon: '📊', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Dashboard', path: '/', icon: '📊', roles: TODOS, seccion: 'produccion' },
   { name: 'Almacén', path: '/almacen', icon: '📦', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Ingeniería', path: '/ingenieria', icon: '📐', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Producción', path: '/produccion', icon: '🏭', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Recepción Taller', path: '/recepcion', icon: '📥', roles: ['ADMIN'], seccion: 'produccion' },
-  { name: 'Etiquetas', path: '/etiquetas', icon: '🏷️', roles: TODOS, seccion: 'produccion' },
+  { name: 'Etiquetas', path: '/etiquetas', icon: '🏷️', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Despachos', path: '/despachos', icon: '🚚', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Talleres', path: '/talleres', icon: '🧵', roles: ['ADMIN'], seccion: 'produccion' },
-  { name: 'Productos', path: '/productos', icon: '👕', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Productos', path: '/productos', icon: '👕', roles: TODOS, seccion: 'produccion' },
   { name: 'Lista de Precios', path: '/precios', icon: '💵', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Control de Ordenes', path: '/control-ordenes', icon: '📋', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Compras', path: '/compras', icon: '🛒', roles: ['ADMIN'], seccion: 'produccion' },
@@ -43,16 +43,17 @@ const menuItems = [
   { name: 'Almacén de Rollos', path: '/rollos', icon: '🧵', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Transformación', path: '/transformacion', icon: '✂️', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Mercadería Comprada', path: '/mercaderia', icon: '📦', roles: ['ADMIN'], seccion: 'produccion' },
-  { name: 'Almacen de terminados', path: '/almacen-terminados', icon: '🏬', roles: TODOS, seccion: 'produccion' },
+  { name: 'Almacen de terminados', path: '/almacen-terminados', icon: '🏬', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Conteo de Inventario', path: '/conteo-inventario', icon: '📋', roles: TODOS, seccion: 'produccion' },
   { name: 'Traslados', path: '/traslados', icon: '🔄', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Caja Rápida', path: '/caja', icon: '⚡', roles: TODOS, seccion: 'produccion' },
-  { name: 'Punto de Venta', path: '/punto-venta', icon: '🛒', roles: TODOS, seccion: 'produccion' },
+  { name: 'Punto de Venta', path: '/punto-venta', icon: '🛒', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Config. Colores', path: '/config-colores', icon: '🎨', roles: ['ADMIN'], seccion: 'produccion' },
-  { name: 'Reportes', path: '/reportes', icon: '📈', roles: TODOS, seccion: 'produccion' },
-  { name: 'Cobranzas', path: '/cobranzas', icon: '💳', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Reportes', path: '/reportes', icon: '📈', roles: ['ADMIN'], seccion: 'produccion' },
+  { name: 'Clientes', path: '/clientes', icon: '🧑‍🤝‍🧑', roles: TODOS, seccion: 'produccion' },
+  { name: 'Cuentas por Cobrar', path: '/cobranzas', icon: '💳', roles: TODOS, seccion: 'produccion' },
   { name: 'Ventas', path: '/ventas', icon: '🧾', roles: TODOS, seccion: 'produccion' },
-  { name: 'Cierre de Caja', path: '/cierre-caja', icon: '🧾', roles: TODOS, seccion: 'produccion' },
+  { name: 'Cierre de Caja', path: '/cierre-caja', icon: '🧾', roles: ['ADMIN'], seccion: 'produccion' },
   { name: 'Usuarios', path: '/usuarios', icon: '👥', roles: ['ADMIN'], seccion: 'produccion' },
   // --- TIENDA WEB ---
   { name: 'Productos Web', path: '/web/productos', icon: '🛍️', roles: ['ADMIN'], seccion: 'web' },

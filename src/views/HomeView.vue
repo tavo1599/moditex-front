@@ -1,8 +1,20 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import api from '../api/axios';
+import { useAuthStore } from '../stores/auth';
+
+// El Dashboard tiene dos caras:
+//   · ADMIN   -> Centro de Comando (finanzas, ventas, kardex): /dashboard/directivo
+//   · VENDEDOR-> algo simple y rápido: sus ventas de hoy y un acceso grande a
+//                la Caja. Nada de números de gerencia.
+const auth = useAuthStore();
+const router = useRouter();
 
 const cargando = ref(true);
+
+// KPIs simples para el vendedor (de /ventas/reporte-general, que sí puede ver)
+const kpisVendedor = ref({ ventasHoy: '0.00', prendasVendidas: 0, stockBajo: 0 });
 
 const kpis = ref({
   ingresosMes: 0,
@@ -20,16 +32,24 @@ const ultimosMovimientos = ref<any[]>([]);
 const cargarDashboard = async () => {
   cargando.value = true;
   try {
-    const res = await api.get('/dashboard/directivo');
-    kpis.value = res.data.kpis;
-    productosTop.value = res.data.topVentas;
-    ultimosMovimientos.value = res.data.ultimosMovimientos;
+    if (auth.esAdmin) {
+      const res = await api.get('/dashboard/directivo');
+      kpis.value = res.data.kpis;
+      productosTop.value = res.data.topVentas;
+      ultimosMovimientos.value = res.data.ultimosMovimientos;
+    } else {
+      // Vendedor: solo lo suyo del día.
+      const res = await api.get('/ventas/reporte-general');
+      kpisVendedor.value = res.data.kpis;
+    }
   } catch (error) {
-    console.error("Error al cargar el dashboard directivo", error);
+    console.error("Error al cargar el dashboard", error);
   } finally {
     cargando.value = false;
   }
 };
+
+const irA = (ruta: string) => router.push(ruta);
 
 const formatearFecha = (fechaISO: string) => {
   return new Date(fechaISO).toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -42,6 +62,9 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-slate-50 p-4 md:p-8 font-urbanist space-y-8">
+
+    <!-- ============ ADMIN: Centro de Comando ============ -->
+    <template v-if="auth.esAdmin">
     
     <header class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
       <div>
@@ -172,6 +195,72 @@ onMounted(() => {
         </table>
       </div>
     </div>
+    </template>
+
+    <!-- ============ VENDEDOR: panel simple y rápido ============ -->
+    <template v-else>
+      <header class="flex items-center justify-between gap-4">
+        <div>
+          <h1 class="text-3xl md:text-4xl font-black text-slate-800 tracking-tight">Hola{{ auth.nombre ? ', ' + auth.nombre : '' }} 👋</h1>
+          <p class="text-sm text-slate-500 font-medium mt-1">Tu día de un vistazo. Lo demás, a un toque.</p>
+        </div>
+        <button @click="cargarDashboard" :disabled="cargando" class="bg-slate-900 text-white px-5 py-3 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 shrink-0">
+          <span :class="{'animate-spin': cargando}">🔄</span>
+        </button>
+      </header>
+
+      <!-- Botón grande: a vender -->
+      <button
+        @click="irA('/caja')"
+        class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-3xl p-6 shadow-lg flex items-center justify-between transition-transform active:scale-[0.99]"
+      >
+        <span class="text-left">
+          <span class="block text-2xl md:text-3xl font-black">⚡ Ir a Caja Rápida</span>
+          <span class="block text-emerald-50 text-sm font-bold">Empieza a vender</span>
+        </span>
+        <span class="text-4xl">🛒</span>
+      </button>
+
+      <!-- KPIs del día -->
+      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+          <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Vendido hoy</p>
+          <h3 class="text-2xl md:text-3xl font-black text-emerald-600">S/ {{ kpisVendedor.ventasHoy }}</h3>
+        </div>
+        <div class="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+          <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Prendas hoy</p>
+          <h3 class="text-2xl md:text-3xl font-black text-slate-800">{{ kpisVendedor.prendasVendidas }}</h3>
+        </div>
+        <div class="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 col-span-2 lg:col-span-1">
+          <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock bajo</p>
+          <h3 class="text-2xl md:text-3xl font-black text-orange-500">{{ kpisVendedor.stockBajo }} <span class="text-sm text-slate-400">prendas</span></h3>
+        </div>
+      </div>
+
+      <!-- Accesos rápidos -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <button @click="irA('/ventas')" class="bg-white hover:bg-slate-50 border border-slate-100 rounded-3xl p-5 shadow-sm text-left transition-colors">
+          <span class="text-3xl">🧾</span>
+          <p class="font-black text-slate-800 mt-2">Ventas</p>
+          <p class="text-xs text-slate-400 font-bold">Ver y cuadrar</p>
+        </button>
+        <button @click="irA('/clientes')" class="bg-white hover:bg-slate-50 border border-slate-100 rounded-3xl p-5 shadow-sm text-left transition-colors">
+          <span class="text-3xl">🧑‍🤝‍🧑</span>
+          <p class="font-black text-slate-800 mt-2">Clientes</p>
+          <p class="text-xs text-slate-400 font-bold">Registrar</p>
+        </button>
+        <button @click="irA('/conteo-inventario')" class="bg-white hover:bg-slate-50 border border-slate-100 rounded-3xl p-5 shadow-sm text-left transition-colors">
+          <span class="text-3xl">📋</span>
+          <p class="font-black text-slate-800 mt-2">Conteo</p>
+          <p class="text-xs text-slate-400 font-bold">Ajustar stock</p>
+        </button>
+        <button @click="irA('/cobranzas')" class="bg-white hover:bg-slate-50 border border-slate-100 rounded-3xl p-5 shadow-sm text-left transition-colors">
+          <span class="text-3xl">💳</span>
+          <p class="font-black text-slate-800 mt-2">Por cobrar</p>
+          <p class="text-xs text-slate-400 font-bold">Deudas</p>
+        </button>
+      </div>
+    </template>
 
   </div>
 </template>

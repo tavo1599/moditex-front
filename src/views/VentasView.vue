@@ -28,6 +28,9 @@ const cargando = ref(true)
 
 const fecha = ref('') // vacío = últimas ventas; con fecha = ese día
 const busqueda = ref('')
+// Almacenes del usuario (el backend ya devuelve solo los suyos). '' = todos.
+const bodegas = ref<any[]>([])
+const bodegaFiltro = ref<number | ''>('')
 
 const aviso = ref<{ texto: string; tipo: 'ok' | 'error' } | null>(null)
 let timerAviso: ReturnType<typeof setTimeout> | null = null
@@ -43,13 +46,21 @@ const avisar = (texto: string, tipo: 'ok' | 'error' = 'ok') => {
 const cargar = async () => {
   cargando.value = true
   try {
-    const [resV, resInv] = await Promise.all([
-      api.get('/ventas/reporte-general', { params: fecha.value ? { fecha: fecha.value } : {} }),
-      api.get('/almacen-terminados/inventario').catch(() => ({ data: [] })),
+    const params: any = {}
+    if (fecha.value) params.fecha = fecha.value
+    if (bodegaFiltro.value) params.bodegaId = bodegaFiltro.value
+    const [resV, resInv, resB] = await Promise.all([
+      api.get('/ventas/reporte-general', { params }),
+      api.get('/almacen-terminados/inventario', {
+        params: bodegaFiltro.value ? { bodegaId: bodegaFiltro.value } : {},
+      }).catch(() => ({ data: [] })),
+      bodegas.value.length ? Promise.resolve({ data: bodegas.value })
+                           : api.get('/almacen-terminados/bodegas').catch(() => ({ data: [] })),
     ])
     ventas.value = resV.data?.ultimasVentas || []
     kpis.value = resV.data?.kpis || null
     inventario.value = resInv.data || []
+    bodegas.value = resB.data || []
   } catch (e: any) {
     avisar('No se pudieron cargar las ventas: ' + (e.response?.data?.message || e.message), 'error')
   } finally {
@@ -225,6 +236,16 @@ const cerrarDevolver = async () => {
         placeholder="🔍 Buscar por código, cliente o almacén..."
         class="flex-1 min-w-[220px] border-2 border-slate-200 rounded-xl px-4 h-12 font-semibold text-slate-700 focus:border-sky-500 outline-none"
       />
+      <!-- Filtro por almacén: aparece solo si el usuario ve más de uno -->
+      <select
+        v-if="bodegas.length > 1"
+        v-model="bodegaFiltro"
+        class="w-full sm:w-auto border-2 border-slate-200 rounded-xl px-4 h-12 font-bold text-slate-700 focus:border-sky-500 outline-none"
+        @change="cargar"
+      >
+        <option :value="''">🏬 Todos mis almacenes</option>
+        <option v-for="b in bodegas" :key="b.id" :value="b.id">{{ b.nombre }}</option>
+      </select>
       <input
         v-model="fecha"
         type="date"

@@ -17,8 +17,7 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView,
-      meta: SOLO_ADMIN
+      component: HomeView
     },
     {
       path: '/almacen',
@@ -29,7 +28,8 @@ const router = createRouter({
     {
       path: '/reportes',
       name: 'reportes',
-      component: () => import('../views/ReportesView.vue')
+      component: () => import('../views/ReportesView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/ingenieria',
@@ -58,8 +58,7 @@ const router = createRouter({
     {
       path: '/productos',
       name: 'productos',
-      component: () => import('../views/ProductosView.vue'),
-      meta: SOLO_ADMIN
+      component: () => import('../views/ProductosView.vue')
     },
     {
       path: '/precios',
@@ -76,7 +75,8 @@ const router = createRouter({
     {
       path: '/almacen-terminados',
       name: 'almacen-terminados',
-      component: () => import('../views/AlmacenTerminadosView.vue')
+      component: () => import('../views/AlmacenTerminadosView.vue'),
+      meta: SOLO_ADMIN
     },
     // ----------------------------------------------------------------
     // RECORRIDO DE LA TELA: Rollos → Transformación → Terminados → Venta
@@ -116,7 +116,8 @@ const router = createRouter({
     {
       path: '/punto-venta',
       name: 'punto-venta',
-      component: () => import('../views/PuntoVentaView.vue')
+      component: () => import('../views/PuntoVentaView.vue'),
+      meta: SOLO_ADMIN
     },
     // 🔥 NUEVA RUTA PARA EL ESCÁNER MÓVIL 🔥
     {
@@ -148,8 +149,12 @@ const router = createRouter({
     {
       path: '/cobranzas',
       name: 'cobranzas',
-      component: () => import('../views/CobranzasView.vue'),
-      meta: SOLO_ADMIN
+      component: () => import('../views/CobranzasView.vue')
+    },
+    {
+      path: '/clientes',
+      name: 'clientes',
+      component: () => import('../views/ClientesView.vue')
     },
     {
       path: '/compras',
@@ -172,12 +177,14 @@ const router = createRouter({
     {
       path: '/etiquetas',
       name: 'etiquetas',
-      component: () => import('../views/EtiquetasView.vue')
+      component: () => import('../views/EtiquetasView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       path: '/cierre-caja',
       name: 'cierre-caja',
-      component: () => import('../views/CierreCajaView.vue')
+      component: () => import('../views/CierreCajaView.vue'),
+      meta: SOLO_ADMIN
     },
     {
       // La vista "Ventas": lista, cuadre de tallas surtidas y devoluciones.
