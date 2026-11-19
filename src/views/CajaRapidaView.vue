@@ -159,6 +159,16 @@ const precioVisible = (producto: any): number => {
   return elegido || min || may || 0
 }
 
+// Proveedor de cada prenda COMPRADA (sale de /productos). La producción propia
+// no tiene proveedor: queda vacío y no se muestra nada.
+const proveedorPorProducto = computed(() => {
+  const m = new Map<number, string>()
+  for (const p of productos.value) {
+    if (p?.proveedorNombre) m.set(Number(p.id), String(p.proveedorNombre))
+  }
+  return m
+})
+
 const prendas = computed(() => {
   const mapa = new Map<number, any>()
   inventarioBodega.value.forEach((item: any) => {
@@ -172,6 +182,8 @@ const prendas = computed(() => {
         // por mayor) que después se pueden cambiar línea por línea.
         producto: item.producto,
         stock: 0,
+        // De quién se compró (solo mercadería); vacío = producción nuestra.
+        proveedor: proveedorPorProducto.value.get(id) || '',
         // Arranca en true y se cae en cuanto aparece una fila real: así queda
         // marcada solo la prenda que el almacén todavía no conoce.
         sinRegistrar: true,
@@ -491,6 +503,10 @@ onMounted(async () => {
             >
               <span class="font-black text-base md:text-lg leading-tight line-clamp-3 drop-shadow-sm pr-16">
                 {{ p.nombre }}
+              </span>
+              <!-- Proveedor: solo en mercadería comprada; producción nuestra no lo tiene -->
+              <span v-if="p.proveedor" class="block text-[11px] font-semibold text-white/80 leading-tight truncate pr-16 -mt-0.5">
+                🏢 {{ p.proveedor }}
               </span>
 
               <button

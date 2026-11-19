@@ -25,6 +25,9 @@ const props = defineProps<{
   carrito: any[];
   bodegaId: number | '';
   listaPrecio: string;    // 'MINORISTA' | 'MAYORISTA'
+  // Proveedor por productoId (solo mercadería comprada). La produccion propia
+  // no tiene y no se muestra. La clave es la misma de claveProducto (string).
+  proveedores?: Record<string, string>;
 }>();
 
 /** Precio que vería el vendedor con la lista activa (cae a la otra si está en cero). */
@@ -61,6 +64,7 @@ const prendas = computed(() => {
         nombre: item.producto?.nombre || 'Producto',
         skuBase: item.producto?.skuBase || '',
         precio: precioVisible(item.producto),
+        proveedor: props.proveedores?.[clave] || '',
         total: 0
       });
     }
@@ -163,6 +167,7 @@ const volver = () => { prendaActiva.value = ''; };
             class="text-left bg-white border-2 border-gray-200 hover:border-blue-500 hover:bg-blue-50/40 rounded-2xl p-4 transition-all active:scale-[0.97] flex flex-col justify-between min-h-[104px]"
           >
             <p class="font-black text-gray-800 text-sm leading-tight line-clamp-2">{{ p.nombre }}</p>
+            <p v-if="p.proveedor" class="text-[11px] font-semibold text-gray-400 leading-tight truncate mt-0.5">🏢 {{ p.proveedor }}</p>
             <div class="flex items-end justify-between gap-2 mt-3">
               <span
                 class="text-[11px] font-black shrink-0"

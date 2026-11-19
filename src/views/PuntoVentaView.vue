@@ -49,6 +49,16 @@ const cargarDatos = async () => {
   }
 }
 
+// Proveedor por productoId (string), solo mercaderia comprada. Lo usa la grilla
+// y el buscador para mostrar de quien vino la prenda; la produccion propia no.
+const proveedoresPorProducto = computed<Record<string, string>>(() => {
+  const m: Record<string, string> = {}
+  for (const p of productos.value) {
+    if (p?.proveedorNombre) m[String(p.id)] = String(p.proveedorNombre)
+  }
+  return m
+})
+
 const inventarioConSKU = computed(() => {
   return inventarioTotal.value.map((item) => {
     const colorObj = colores.value.find((c) => c.codigo === item.color || c.nombre === item.color)
@@ -131,6 +141,7 @@ const resultadosBusqueda = computed(() => {
       if (!porTalla.has(clave)) {
         porTalla.set(clave, {
           clave, productoId, talla: i.talla, producto: i.producto, stock: 0,
+          proveedor: proveedoresPorProducto.value[String(productoId)] || '',
           sinRegistrar: true,
         })
       }
@@ -415,6 +426,7 @@ onMounted(() => {
             >
               <div class="min-w-0">
                 <p class="font-black text-gray-800 text-sm truncate">{{ p.producto?.nombre }}</p>
+                <p v-if="p.proveedor" class="text-[11px] font-semibold text-gray-400 truncate">🏢 {{ p.proveedor }}</p>
                 <span
                   class="inline-block text-[10px] font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded mt-1"
                   >Talla {{ p.talla }}</span
@@ -632,6 +644,7 @@ onMounted(() => {
               :carrito="carrito"
               :bodegaId="bodegaSeleccionada"
               :listaPrecio="tipoVenta"
+              :proveedores="proveedoresPorProducto"
               @agregar="agregarDesdeGrilla"
             />
           </div>
